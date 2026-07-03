@@ -1,0 +1,117 @@
+---
+title: "Deploy 4Stem Band Player to Vercel or Static Hosting"
+sidebarTitle: "Deployment"
+description: "Build the static site and deploy to Vercel or any static host. Covers build output structure, vercel.json config, and what the server must serve."
+---
+
+4Stem Band Player compiles to a fully static site — no Node server, no API routes, and no database. The production build writes everything the browser needs into a single output directory, which you can serve from Vercel, Netlify, Cloudflare Pages, an S3-backed CDN, or any plain static file host.
+
+## Building for Production
+
+Run the production build with:
+
+```bash
+npm run build
+```
+
+SvelteKit uses `@sveltejs/adapter-static` (configured in `svelte.config.js`) to prerender every route to static HTML and emit all client assets. The build writes output to two locations:
+
+- **`build/`** — the internal SvelteKit build directory
+- **`public/`** — the deployable artifact; this is what your host should serve
+
+The build step also automatically copies the contents of `static/songs/` into `public/songs/`, so the deployable output is fully self-contained.
+
+### `svelte.config.js` adapter settings
+
+```js
+adapter: adapter({
+  pages: 'public',
+  assets: 'public',
+  fallback: undefined,
+  precompress: false,
+  strict: true
+})
+```
+
+Both pages and assets are written to `public/`, with no SPA fallback (the app is a single prerendered route).
+
+## Output Directory Structure
+
+After `npm run build`, the `public/` directory contains everything the host needs to serve:
+
+| Path | Contents |
+|---|---|
+| `index.html` | Prerendered app shell |
+| `_app/` | SvelteKit client JavaScript, CSS, and immutable hashed assets |
+| `songs/manifest.json` | Song catalog loaded at runtime |
+| `songs/<SongFolder>/song.json` | Per-song metadata |
+| `songs/<SongFolder>/*.mp3` | Audio stem files |
+| `songs/<SongFolder>/*.peaks.json` | Precomputed waveform peak data |
+| `songs/<SongFolder>/lyrics.md` | Song lyrics |
+| `manifest.webmanifest` | PWA web app manifest |
+| `service-worker.js` | PWA service worker |
+
+No server-side route, API endpoint, or database connection is required at runtime.
+
+## Deploying to Vercel
+
+The repository includes a `vercel.json` that configures Vercel to use the static build adapter and point to the correct output directory. No additional Vercel dashboard settings are needed beyond connecting the repository.
+
+### `vercel.json`
+
+```json
+{
+  "outputDirectory": "public",
+  "buildCommand": "npm run build"
+}
+```
+
+Vercel reads `buildCommand` to run `npm run build` and then serves the resulting `public/` directory as a static site via `@vercel/static-build`. Push to your connected branch and Vercel handles the rest.
+
+<Note>
+  Your static host or CDN must serve all file types in `public/` without blocking — including `.mp3` audio files, `.json` metadata and peak files, and `.md` lyrics files. Some CDN configurations restrict non-HTML MIME types by default; ensure `audio/mpeg`, `application/json`, and `text/markdown` (or `text/plain`) are permitted.
+</Note>
+
+## Deploying to Other Static Hosts
+
+Any host that can serve a directory of static files will work. Point your host's output directory setting to `public/` and set the build command to `npm run build`. Specific examples:
+
+```bash
+# Netlify (netlify.toml)
+[build]
+  command   = "npm run build"
+  publish   = "public"
+
+# Cloudflare Pages
+Build command:    npm run build
+Build output dir: public
+```
+
+Because the app is a single prerendered route with no SPA fallback configured, there are no special rewrite rules needed for client-side routing.
+
+## PWA and Service Worker
+
+The player ships a service worker (`src/service-worker.ts`) that is registered in production only. On install, it precaches the compiled app shell and all static assets so the UI loads instantly on repeat visits. Audio stems under `/songs/*` are cached **cache-first** at runtime, meaning a song that has been played once is fully available offline without a network connection.
+
+The `static/manifest.webmanifest` enables the app to be installed to a phone home screen and launched in standalone mode (no browser chrome). Ensure your host serves `manifest.webmanifest` with the `application/manifest+json` content type for the install prompt to appear.
+
+## Pre-Deployment Checklist
+
+<Tip>
+  Run `npm run songs:release` before every deployment. This single command runs `songs:prepare` (validate songs, generate any missing peaks, regenerate the manifest), then `check` (Svelte type-checking), `test` (all 100 unit tests), and finally `build` — so you ship a fully validated, tested, and freshly built artifact every time.
+</Tip>
+
+```bash
+npm run songs:release
+# Equivalent to:
+#   npm run songs:prepare
+#   npm run check
+#   npm run test
+#   npm run build
+```
+
+To run the full release validation without rebuilding (useful in CI when the build step is separate):
+
+```bash
+npm run songs:release -- --skip-build
+```

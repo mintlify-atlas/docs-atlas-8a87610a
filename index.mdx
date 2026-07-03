@@ -1,20 +1,78 @@
 ---
-title: "Introduction"
-description: "Welcome to your project"
+title: "4Stem Band Player: Multi-Stem Music Rehearsal in the Browser"
+sidebarTitle: "Home"
+description: "4Stem Band Player is a browser-based static web app for synchronized multi-stem music rehearsal. Mute, solo, transpose, and navigate your song catalog — no server required."
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+4Stem Band Player loads a static song catalog, decodes multiple MP3 stems directly in the browser, and lets you rehearse or inspect any song with transport controls, per-stem mixing, waveform seeking, chord charts, lyrics, and section navigation. It runs entirely as a static site — no backend, no auth, no build-time server needed.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+<CardGroup cols={2}>
+  <Card title="Introduction" icon="circle-info" href="/introduction">
+    Learn what 4Stem Band Player does and how it works at a high level.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Clone, install, and run the player locally in minutes.
+  </Card>
+  <Card title="Adding Songs" icon="music" href="/songs/overview">
+    Learn how to add your own songs and stems to the player catalog.
+  </Card>
+  <Card title="Deployment" icon="server" href="/deployment">
+    Deploy the static build to Vercel or any static hosting provider.
+  </Card>
+</CardGroup>
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+## What the Player Does
+
+4Stem Band Player decodes up to seven stems per song — `vocals`, `guitar`, `strings`, `drums`, `bass`, `fx`, and `other` — and keeps them perfectly synchronized during playback and seeking. Every stem has its own waveform display, mute/solo toggle, and volume fader. A global transport gives you play, pause, stop, and seek. The Space bar toggles play/pause from anywhere on the page.
+
+<CardGroup cols={2}>
+  <Card title="Transport Controls" icon="play" href="/player/transport-controls">
+    Play, pause, stop, seek, and navigate song sections.
+  </Card>
+  <Card title="Stem Mixer" icon="sliders" href="/player/stem-mixer">
+    Per-stem mute, solo, volume, and live waveform interaction.
+  </Card>
+  <Card title="Transpose & Tempo" icon="arrows-up-down" href="/player/transpose-tempo">
+    Shift pitch globally with SoundTouch — real-time on desktop, pre-rendered on mobile.
+  </Card>
+  <Card title="Lyrics & Chords" icon="align-left" href="/player/lyrics-chords">
+    Synchronized lyrics viewer and structured chord chart display.
+  </Card>
+</CardGroup>
+
+## Key Features
+
+<CardGroup cols={3}>
+  <Card title="Offline PWA" icon="wifi-slash">
+    Install to your home screen and play any previously loaded song without a connection.
+  </Card>
+  <Card title="Lite Mode" icon="memory">
+    Mono/22 kHz decode cuts memory use by ~75% on phones so tabs don't get evicted.
+  </Card>
+  <Card title="Lock-Screen Controls" icon="mobile-screen">
+    Media Session integration lets you control playback from the lock screen or Bluetooth headset.
+  </Card>
+</CardGroup>
+
+## Song Data at a Glance
+
+Songs live under `static/songs/<Folder>/`. Each folder needs a `song.json` metadata file, a `lyrics.md` file, and at minimum the three required MP3 stems: `bass`, `drums`, and `vocals`. Optional stems are discovered automatically.
+
+<Steps>
+  <Step title="Create a song folder">
+    Add a new folder under `static/songs/` with a URL-safe name like `MyNewSong`.
+  </Step>
+  <Step title="Add song.json and lyrics.md">
+    Provide title, artist, key, BPM, time signature, optional chords, and section markers.
+  </Step>
+  <Step title="Add MP3 stems">
+    Place at least `bass`, `drums`, and `vocals` stems. Optional stems are auto-discovered.
+  </Step>
+  <Step title="Run songs:prepare">
+    `npm run songs:prepare` validates, generates waveform peaks, and regenerates the manifest.
+  </Step>
+</Steps>
+
+<Note>
+  The full ingestion process, including waveform peak generation and release validation, is covered in [Adding Songs](/songs/overview).
+</Note>

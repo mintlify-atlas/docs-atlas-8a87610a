@@ -1,0 +1,131 @@
+---
+title: "Global Transpose and Pitch Control"
+sidebarTitle: "Transpose & Tempo"
+description: "Shift all non-drum stems by semitone in 4Stem Band Player via SoundTouch. Real-time on desktop, offline pre-render on mobile for glitch-free playback."
+---
+
+4Stem Band Player lets you shift the key of a song up or down in semitone steps without affecting tempo or synchronisation. The feature is powered by [SoundTouch](https://www.surina.net/soundtouch/) and applies globally to all non-drum stems. Two strategies handle the workload depending on device capability: a real-time AudioWorklet path for desktop and an offline pre-render path for phones.
+
+## Transpose Controls
+
+The transpose controls sit in the transport bar directly below the seek slider and position readouts.
+
+<CardGroup cols={3}>
+  <Card title="− Button" icon="minus" href="/player/transpose-tempo">
+    Decrements the global transpose by one semitone. Disabled while the song is loading.
+  </Card>
+  <Card title="Amount Display" icon="music" href="/player/transpose-tempo">
+    Shows the current shift, e.g. `+2` or `−3`. Formatted by `formatPitchSemitones` — displays `0` when no shift is active.
+  </Card>
+  <Card title="+ Button" icon="plus" href="/player/transpose-tempo">
+    Increments the global transpose by one semitone. Disabled while the song is loading.
+  </Card>
+</CardGroup>
+
+A **Reset transpose** button appears alongside the `−`/`+` pair. Pressing it returns the shift to 0 and removes pitch routing from the audio graph.
+
+## Global-Only Transpose
+
+Transpose is intentionally **global**: every non-drum stem shifts by the same number of semitones at once. Per-stem transpose is not exposed in the UI.
+
+**Drum stems are excluded.** Drums stay at their original pitch regardless of the global setting. In render mode, drums are still routed through the same offline pass (at pitch 0) to maintain phase lock — see [Drum Compensation](#drum-compensation-in-render-mode) below.
+
+## Desktop: Real-Time Mode
+
+On desktop, the engine uses `pitchTempoMode: "realtime"`. Each affected non-drum stem is routed through a dedicated **SoundTouch AudioWorklet** node in the Web Audio graph.
+
+- Transpose changes take effect **instantly** — there is no render delay.
+- When no shift is active (transpose = 0), the zero-cost direct path is used — no worklet is inserted.
+- When pitch routing must be inserted or removed, the engine fades the master output briefly to avoid an audible click during the graph swap.
+
+## Mobile: Render Mode
+
+On mobile devices, running four to six live SoundTouch worklets simultaneously overruns the audio deadline. The worklets starve, the audio falls behind a wall-clock playhead (sounds like the song accelerates), dropouts appear as crackle, and live graph swaps feel unstable.
+
+The engine therefore switches to `pitchTempoMode: "render"`. Instead of processing audio live, it **pre-renders every affected stem offline** using SoundTouch's `processOffline` API into plain `AudioBuffer` objects. Playback then carries **no real-time DSP at all**.
+
+### Auto-Detection
+
+Render mode is auto-enabled on the same signals used by [Lite mode](/player/pwa-offline#lite-mode):
+
+- Coarse-pointer (phone-sized) screens
+- `navigator.connection.saveData === true`
+- Slow or metered network connections
+- Low `navigator.deviceMemory`
+
+### Render Progress Indicator
+
+While renders are running, the transport shows one of two progress messages:
+
+| Message | When shown |
+|---|---|
+| `Applying key & tempo…` | Initial render or when both transpose and tempo change together |
+| `Applying transpose… N/M` | Per-stem progress during a transpose-only render (N stems complete, M total) |
+
+Playback resumes automatically from the same position once all stems have been rendered.
+
+### Drum Compensation in Render Mode
+
+SoundTouch adds a small, pitch-dependent constant time offset to everything it processes — roughly 8 ms at 0 semitones, growing to ~13 ms at +2 and more at larger intervals. If drums were left unprocessed while pitched stems went through the offline pass, the drums would play a few to tens of milliseconds *ahead* of the other stems.
+
+To prevent this drift, render mode routes **every** stem — including drums — through the same offline pass whenever any transform is active. Drums are processed at pitch 0, which incurs the same time offset and keeps all stems phase-locked. When transpose returns to 0 and tempo to 1 (×), all stems revert to their original buffers and no render runs.
+
+## Output Headroom and Limiting
+
+Time-stretch algorithms can introduce peak overshoot. The engine applies two layers of protection:
+
+### Per-Transpose Headroom Gain
+
+| Transpose amount | Headroom gain |
+|---|---|
+| 0 (no shift) or downward | `0.7` |
+| +1 or +2 semitones | `0.62` |
+| +3 or higher | `0.55` |
+
+### Master Bus Limiter
+
+A `DynamicsCompressorNode` on the master bus acts as a fast brickwall limiter to catch any remaining peaks:
+
+```
+threshold : −1.5 dB
+ratio     : 20
+knee      : 0
+```
+
+The headroom gain is applied in addition to the limiter — both are always active when pitch shift is engaged.
+
+## Playback Transition Safety
+
+Inserting or removing pitch routing is asynchronous: the SoundTouch AudioWorklet can take tens of milliseconds to initialise, and the graph swap also awaits a short master fade. This creates a window where a stale transition could restart audio against an outdated playhead.
+
+The engine guards these awaits with a **playback epoch counter**. Every playback-changing action — `stop`, `pause`, `seek`, new song load, and fresh `play` — advances the epoch. Asynchronous graph work captures the current epoch and re-checks it after every `await`. If the epoch has moved on, the operation aborts silently.
+
+A **start guard** also prevents a second `play` from launching duplicate sources while the worklet is still initialising. Graph rebuilds are serialised so two back-to-back transpose or tempo changes cannot interleave into overlapping source sets.
+
+<Warning>
+  Without the epoch guard, a previously observed defect allowed transposing and then pressing Play or Stop while the pitch worklet was loading to leave orphaned audio sources running in the background. The transport reported a stopped, frozen playhead while audio continued — visible as the position readout jumping or playback appearing to accelerate uncontrollably. The epoch guard fixes this by ensuring that any in-flight async transition that has been superseded is discarded before it can start sources.
+</Warning>
+
+## Resampling and Search Strategy
+
+All offline renders use **lanczos resampling** throughout. The WSOLA time-stretch adapts its search strategy based on transpose size to balance quality and speed:
+
+<Tabs>
+  <Tab title="Small shifts (±2 st or less)">
+    Uses **`quickSeek`** mode — roughly **1.8× faster** than full search. Audible quality difference is negligible at small intervals. Also used for the drums pass at pitch 0.
+  </Tab>
+  <Tab title="Larger shifts (±3 st or more)">
+    Uses **full search** mode. Slower but maintains quality for large intervals where `quickSeek` introduces audible artefacts.
+  </Tab>
+</Tabs>
+
+### Concurrent Rendering
+
+Stems are rendered **concurrently** (with a concurrency cap to bound peak memory usage) rather than one after another. On a six-stem song this avoids waiting through six sequential passes and typically cuts total render time by 3–4×. The `Applying transpose… N/M` indicator reflects progress across the parallel batch.
+
+## Related Pages
+
+- [Transport Controls](/player/transport-controls) — where the transpose buttons live
+- [Stem Mixer](/player/stem-mixer) — per-stem volume, mute, and solo
+- [PWA & Offline](/player/pwa-offline) — Lite mode and the same device signals that trigger render mode
+- [Audio Engine Architecture](/architecture/audio-engine) — Web Audio graph internals and the SoundTouch worklet

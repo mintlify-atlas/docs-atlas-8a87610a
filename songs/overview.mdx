@@ -1,0 +1,111 @@
+---
+title: "Adding Songs to 4Stem Band Player"
+sidebarTitle: "Overview"
+description: "Learn how songs are structured in 4Stem Band Player, what files each song requires, and how the static song catalog works at a high level."
+---
+
+Songs in 4Stem Band Player live entirely on the filesystem — there is no upload UI or database. You add a song by placing its files into the right folder, running a pair of scripts to validate and index it, and then deploying the static site. This page explains the structure, what files are required, and how the catalog is served to the browser.
+
+## How the Catalog Works
+
+Each song lives in its own subfolder under `static/songs/`. At build time, `npm run build` copies those folders into `public/songs/` as part of the SvelteKit static export. When the app loads in the browser, it fetches `/songs/manifest.json` to discover all available songs. That manifest is regenerated whenever you run `npm run songs:prepare` or `npm run songs:release`.
+
+The folder name doubles as the song's unique ID throughout the app — it appears in the manifest, in stem URLs, and in peak file paths. Keep folder names URL-safe and free of spaces.
+
+<Note>
+  Folder names are used directly as song IDs. Avoid spaces and special characters — use `GloryBox` rather than `Glory Box`. MP3 filenames may use spaces, but the folder name must be stable and URL-safe.
+</Note>
+
+## Required Folder Contents
+
+Every song folder must contain at minimum:
+
+```text
+static/songs/<Folder>/
+  song.json
+  lyrics.md
+  <Folder>_bass.mp3
+  <Folder>_drums.mp3
+  <Folder>_vocals.mp3
+```
+
+The three required stems are `bass`, `drums`, and `vocals`. Optional stems — `guitar`, `strings`, `fx`, and `other` — are dynamically discovered at manifest-generation time if their MP3 files are present.
+
+Stem files are resolved by checking for `<Folder>_<stem>.mp3` first, then `<SongTitle>_<stem>.mp3`, and finally any file whose lowercase name ends with `_<stem>.mp3`. Using the folder-name prefix is recommended because it avoids spaces and keeps URLs compact.
+
+## Stem Display Order
+
+When stems are rendered in the mixer, they appear in this preferred order regardless of the order they are listed in the manifest:
+
+1. `vocals`
+2. `guitar`
+3. `strings`
+4. `drums`
+5. `bass`
+6. `fx`
+7. `other`
+
+## Example Folder Layout
+
+A fully populated song folder with all optional stems and precomputed waveform peak files looks like this:
+
+```text
+static/songs/GloryBox/
+  song.json
+  lyrics.md
+  GloryBox_vocals.mp3
+  GloryBox_vocals.peaks.json
+  GloryBox_guitar.mp3
+  GloryBox_guitar.peaks.json
+  GloryBox_drums.mp3
+  GloryBox_drums.peaks.json
+  GloryBox_bass.mp3
+  GloryBox_bass.peaks.json
+```
+
+Peak files (`.peaks.json`) are optional but strongly recommended — they let WaveSurfer render waveforms without re-decoding the MP3, reducing network and CPU work. They are generated automatically by `npm run songs:peaks`.
+
+## Bundled Demo Songs
+
+The repository ships with five demo songs ready to use:
+
+| Folder | Title | Artist |
+|---|---|---|
+| `Bambola` | La bambola | Patty Pravo |
+| `GloryBox` | Glory Box | Portishead |
+| `IkesRap2` | Ike's Rap 2 | Isaac Hayes |
+| `SendHLTMe` | Send His Love to Me | PJ Harvey |
+| `YouMightThink` | You Might Think | The Cars |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="song.json Reference"
+    icon="file-code"
+    href="/songs/song-json"
+  >
+    Complete reference for all metadata fields, chord formats, section markers, and validation rules.
+  </Card>
+  <Card
+    title="Ingestion Workflow"
+    icon="list-check"
+    href="/songs/ingestion-workflow"
+  >
+    Step-by-step guide to adding a new song from folder creation through release validation.
+  </Card>
+  <Card
+    title="CLI Reference"
+    icon="terminal"
+    href="/songs/cli-reference"
+  >
+    Full documentation for every npm script: songs:prepare, songs:release, songs:validate, and more.
+  </Card>
+  <Card
+    title="Data Contracts"
+    icon="database"
+    href="/architecture/data-contracts"
+  >
+    TypeScript interfaces for SongMetadata, SongManifest, PeaksFile, and related shapes.
+  </Card>
+</CardGroup>

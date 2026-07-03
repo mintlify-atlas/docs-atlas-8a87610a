@@ -1,47 +1,146 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with 4Stem Band Player"
+sidebarTitle: "Quickstart"
+description: "Clone the repo, install dependencies, and launch 4Stem Band Player locally in under five minutes. Includes the full development workflow."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+4Stem Band Player is a static SvelteKit app with no backend, so the entire development workflow runs locally. The steps below take you from a fresh clone to a running dev server, then through type checking, testing, and a production build.
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+
+  <Step title="Install prerequisites">
+    You need the following tools installed on your system before starting:
+
+    - **Node.js 18 or later** — required to run Vite and the SvelteKit build
+    - **git** — to clone the repository
+    - **ffmpeg** (optional, but required for `npm run songs:peaks`) — used by the peak-generation script to extract waveform data from MP3 files
+
+    Verify your Node version:
 
     ```bash
-    npm install your-package
+    node --version
+    # v18.0.0 or higher
     ```
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/cocreating/4StemPlayer.git && cd 4StemPlayer
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    ```bash
+    npm install
+    ```
+
+    This installs SvelteKit, Svelte 5, Vite, TypeScript, WaveSurfer.js, the SoundTouch AudioWorklet package, Vitest, and all development tooling.
+  </Step>
+
+  <Step title="Start the development server">
+    ```bash
+    npm run dev
+    ```
+
+    Open [http://localhost:5173](http://localhost:5173) in your browser. The dev server binds to `0.0.0.0` so it is also reachable from other devices on your local network.
+
+    <CodeGroup>
+      ```text Expected output
+        VITE v8.x.x  ready in Xms
+
+        ➜  Local:   http://localhost:5173/
+        ➜  Network: http://<your-ip>:5173/
+        ➜  press h + enter to show help
+      ```
+    </CodeGroup>
+
+    <Note>
+      Both `npm run dev` and `npm run preview` bind to `0.0.0.0`, making the server accessible on your local network — useful for testing on a physical phone.
+    </Note>
+  </Step>
+
+  <Step title="Explore the demo songs">
+    The five bundled demo songs are already in `static/songs/` with pre-generated waveform peak files and are ready to play immediately:
+
+    | Folder | Title | Artist |
+    |---|---|---|
+    | `Bambola` | La bambola | Patty Pravo |
+    | `GloryBox` | Glory Box | Portishead |
+    | `IkesRap2` | Ike's Rap 2 | Isaac Hayes |
+    | `SendHLTMe` | Send His Love to Me | PJ Harvey |
+    | `YouMightThink` | You Might Think | The Cars |
+
+    Select a song from the dropdown in the header. The app fetches and decodes all stems, then displays waveforms for each one.
+
+    <Tip>
+      Press **Space** anywhere in the app (outside a text input) to toggle play/pause — the quickest way to start and stop playback without reaching for the mouse.
+    </Tip>
+  </Step>
+
+  <Step title="Regenerate peaks and manifest (optional)">
+    If you add or modify song files, run the preparation script to validate folders, generate any missing waveform peak files, and rebuild `static/songs/manifest.json`:
 
     ```bash
-    your-cli init
+    npm run songs:prepare
     ```
-  </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+    To force-regenerate every peak file even if the source MP3 has not changed:
 
     ```bash
-    your-cli start
+    npm run songs:prepare -- --force-peaks
     ```
+
+    <Warning>
+      `npm run songs:peaks` (called internally by `songs:prepare`) requires `ffmpeg` on your `PATH`. If `ffmpeg` is not installed, peak generation will fail. Install it via your system package manager (`brew install ffmpeg`, `apt install ffmpeg`, etc.) before running this command.
+    </Warning>
   </Step>
+
+  <Step title="Run the type checker">
+    ```bash
+    npm run check
+    ```
+
+    This runs `svelte-kit sync` followed by `svelte-check` against `tsconfig.json`. The project currently reports zero Svelte errors and zero warnings.
+  </Step>
+
+  <Step title="Run the test suite">
+    ```bash
+    npm test
+    ```
+
+    Vitest runs 17 test files covering the audio engine, song scripts, metadata formatting, keyboard shortcut guard, and more — 100 tests in total, all passing.
+  </Step>
+
+  <Step title="Build for production">
+    ```bash
+    npm run build
+    ```
+
+    SvelteKit compiles the static site and writes the output to `build/`. The build step also copies `static/songs/` content into `public/songs/` so the deployable artifact is self-contained under `public/`.
+  </Step>
+
+  <Step title="Preview the production build">
+    ```bash
+    npm run preview
+    ```
+
+    Opens a local static file server at [http://localhost:4173](http://localhost:4173) serving the `public/` output directory, with the same `0.0.0.0` binding as the dev server.
+  </Step>
+
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## All npm Scripts
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+| Script | Description |
+|---|---|
+| `npm run dev` | Start the Vite dev server (binds to `0.0.0.0`, port 5173) |
+| `npm run build` | Compile and write the static site to `build/` / `public/` |
+| `npm run preview` | Serve the production build locally (binds to `0.0.0.0`, port 4173) |
+| `npm run check` | Run `svelte-kit sync` and `svelte-check` for type and template errors |
+| `npm test` | Run the full Vitest test suite (17 files, 100 tests) |
+| `npm run test:unit` | Alias for `npm test` |
+| `npm run songs:prepare` | Validate songs, generate missing peaks, regenerate the manifest |
+| `npm run songs:release` | Run `songs:prepare`, then `check`, `test`, and `build` |
+| `npm run songs:manifest` | Regenerate `static/songs/manifest.json` only |
+| `npm run songs:validate` | Validate song folder completeness without making changes |
+| `npm run songs:peaks` | Generate waveform peak JSON files (requires `ffmpeg` on `PATH`) |

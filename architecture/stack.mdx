@@ -1,0 +1,166 @@
+---
+title: "Technology Stack and Application Architecture"
+sidebarTitle: "Stack"
+description: "Explore the SvelteKit, Svelte 5, TypeScript, and Web Audio API stack powering 4Stem Band Player, including runtime shape, state ownership, and UI composition."
+---
+
+4Stem Band Player is a browser-only static web application built with SvelteKit and Svelte 5. There is no server-side API, no database, no authentication layer, and no persistent client storage — every asset the player needs is a static file served from the `public/` build output. Audio decoding and playback happen entirely inside Web Audio API nodes that are created after the page mounts in the browser.
+
+## Full Dependency Table
+
+Every runtime and development dependency with its pinned version:
+
+| Area | Package | Version |
+|---|---|---|
+| App framework | `@sveltejs/kit` | 2.59.1 |
+| UI runtime | `svelte` | 5.55.7 |
+| Build tool | `vite` | 8.0.11 |
+| Language | `typescript` | 6.0.3 |
+| Static adapter | `@sveltejs/adapter-static` | 3.0.10 |
+| Waveform rendering | `wavesurfer.js` | 7.12.6 |
+| Pitch/tempo processing | `@soundtouchjs/audio-worklet` | 2.0.3 |
+| Test runner | `vitest` | 4.1.5 |
+| Test DOM | `jsdom` | 29.1.1 |
+| Script runner | `tsx` | 4.21.0 |
+| Peak generation | `ffmpeg` | external CLI |
+
+<Note>
+`ffmpeg` is only required when running `npm run songs:peaks` or `npm run songs:prepare` on a development machine. It is never called at runtime in the browser.
+</Note>
+
+## Runtime Shape
+
+The SvelteKit route is fully prerendered and statically exported:
+
+- `src/routes/+layout.ts` exports `prerender = true` and `ssr = true`.
+- `svelte.config.js` uses `@sveltejs/adapter-static` and writes the finished site to the `public/` directory.
+- SSR renders only the application shell — no audio work, no `AudioContext` construction, and no `window` access happens server-side.
+- After the page mounts in the browser, Svelte lifecycle code in `AppShell.svelte` creates the `AudioEngine` and begins fetching the song manifest.
+
+Svelte 5 runes used throughout the codebase:
+
+| Rune | Purpose |
+|---|---|
+| `$props` | Component input declarations |
+| `$state` | Owned, reactive UI state |
+| `$derived` | Computed display values from reactive state |
+| `$effect` | Side effects that run when reactive dependencies change |
+
+## Boot Sequence
+
+The following sequence runs every time the app loads in a browser tab:
+
+<Steps>
+  <Step title="AppShell.svelte mounts">
+    The SvelteKit page hydrates and `onMount` fires. Theme and low-memory preferences are read from `localStorage`, and the Space bar keydown listener is registered on `window`.
+  </Step>
+  <Step title="loadSongManifest() fetches /songs/manifest.json">
+    `songs.ts` sends a `fetch` request for the static manifest file. A loading indicator is displayed while the request is in flight.
+  </Step>
+  <Step title="First song is auto-selected">
+    When the manifest resolves and contains at least one entry, the first song (or the last-played song stored in `localStorage`) is selected automatically.
+  </Step>
+  <Step title="loadSongBundle(entry) fetches song.json and lyrics.md">
+    Two parallel requests retrieve the selected song's full metadata object and its Markdown lyrics text. The resolved `SongBundle` is stored in `AppShell`'s `$state`.
+  </Step>
+  <Step title="AudioEngine.loadSong() fetches and decodes all available stems">
+    The engine fetches every stem MP3 concurrently, decodes each with `AudioContext.decodeAudioData()`, and builds the gain graph. Per-stem loading state is reported through snapshot updates.
+  </Step>
+  <Step title="Components render from AudioEngineSnapshot updates">
+    `AppShell` subscribes to the engine and stores each snapshot in `$state`. `TransportBar`, `StemMixer`, `WaveformView`, and related components re-render reactively whenever the snapshot changes.
+  </Step>
+</Steps>
+
+## State Ownership
+
+Clear state ownership prevents duplicate sources of truth and keeps components presentational:
+
+| State | Owner | Notes |
+|---|---|---|
+| Song list and selected song | `AppShell.svelte` | Loaded from `/songs/manifest.json` and stored in `$state` |
+| Loaded metadata and lyrics | `AppShell.svelte` | Stored as a `$state` `SongBundle` |
+| Audio buffers, gain nodes, source nodes | `AudioEngine` | Hidden inside the engine; never exposed directly |
+| Transport position and playing state | `AudioEngine` | Exposed to the UI through immutable snapshots |
+| Per-stem mute, solo, volume, load/error state | `AudioEngine` | Exposed as `snapshot.stems` |
+| Waveform visual state | `WaveformView.svelte` + WaveSurfer | Recreated via `$effect` when stem URL, peaks URL, or duration changes |
+| Keyboard shortcut decisions | `src/lib/keyboard.ts` | Filters Space bar events; ignores editable targets |
+
+## UI Component Tree
+
+`AppShell.svelte` is the sole orchestrator. It owns the engine lifecycle, manifest loading, song selection, and error state. Every child component is presentational and communicates upward through callback props.
+
+```text
+AppShell.svelte  (orchestrator — owns engine, manifest, song selection)
+├── SongSelector          (dropdown — calls onSelect)
+├── ThemeToggle           (dark/light mode toggle)
+├── LowMemoryToggle       (decode-profile toggle)
+├── TransportBar          (play/pause/stop/seek/transpose — calls engine methods)
+│   ├── SectionsPopover   (jump-to-section buttons — calls onSeek)
+│   ├── MixerPopover      (per-stem mute/solo/volume — calls engine methods)
+│   └── LyricsViewer      (preserved-whitespace lyrics display)
+├── StemMixer             (renders one StemRow per stem)
+│   └── StemRow (×N)      (mute/solo/volume + WaveformView per stem)
+│       └── WaveformView  (WaveSurfer waveform; seek on click)
+└── SongInfoPanel         (metadata, chords, section markers)
+```
+
+<Tip>
+Because all audio mutations go through `AppShell` to `AudioEngine`, components like `StemRow` and `TransportBar` never hold audio state themselves. They receive the latest `AudioEngineSnapshot` as a prop and fire callbacks upward.
+</Tip>
+
+## What This Stack Does Not Include
+
+<CardGroup cols={2}>
+  <Card title="No CSS framework" icon="paintbrush-pencil" href="/architecture/stack">
+    Styling is plain global CSS in `src/app.css`. There is no Tailwind, no CSS-in-JS, and no component library.
+  </Card>
+  <Card title="No backend or API" icon="server" href="/architecture/stack">
+    The player reads only static files. There is no server route, no API endpoint, and no database query at any point.
+  </Card>
+  <Card title="No auth or accounts" icon="lock" href="/architecture/stack">
+    There are no user accounts, no login flow, and no session tokens of any kind.
+  </Card>
+  <Card title="No persistent mix state" icon="floppy-disk" href="/architecture/stack">
+    Mute, solo, and volume settings reset when a new song is selected. Only the last-played song ID and theme preference are stored in `localStorage`.
+  </Card>
+</CardGroup>
+
+## Testing
+
+Tests run with Vitest in a `jsdom` environment. The configuration in `vite.config.ts`:
+
+```typescript
+test: {
+  environment: 'jsdom',
+  include: ['src/**/*.test.ts', 'scripts/**/*.test.ts']
+}
+```
+
+Current test coverage areas:
+
+- Audio engine stem loading and synchronized source starts
+- Seeking across all loaded stems
+- Gain behavior for volume, mute, and solo
+- Audio resource cleanup when switching songs
+- Song manifest creation and URL-safe path encoding
+- Song folder validation errors
+- Refresh workflow orchestration and CLI flag parsing
+- Peak skipping when peak files are newer than stems
+- Structured chord formatting and duration metadata formatting
+- Keyboard shortcut guard behavior
+
+## Deployment
+
+The finished site is a folder of static files written to `public/` by `npm run build`. Static hosting must serve:
+
+- `index.html` (the SvelteKit shell)
+- SvelteKit client assets under `_app/`
+- MP3 stems under `songs/`
+- JSON metadata and peak files under `songs/`
+- Markdown lyrics files under `songs/`
+
+No server process, no Node runtime, and no API server is required after the build completes.
+
+<Note>
+Run `npm run songs:release` before deploying to verify that song validation, type checks, unit tests, and the static build all pass together.
+</Note>

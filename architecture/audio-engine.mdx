@@ -1,0 +1,343 @@
+---
+title: "AudioEngine: Web Audio Playback and Stem Synchronization"
+sidebarTitle: "Audio Engine"
+description: "Deep dive into AudioEngine.ts — the central Web Audio module for stem loading, synchronized playback, gain control, pitch shifting, and snapshot-based state."
+---
+
+`AudioEngine` is the single source of truth for all audio state in 4Stem Band Player. Located at `src/lib/audio/AudioEngine.ts`, it wraps the Web Audio API into a testable, snapshot-driven class that `AppShell.svelte` subscribes to. Components never touch `AudioContext` directly — they call engine methods and re-render from the immutable `AudioEngineSnapshot` objects the engine emits.
+
+## Location and Constants
+
+```typescript
+// src/lib/audio/AudioEngine.ts
+
+export const STEM_ORDER = ['vocals', 'guitar', 'strings', 'drums', 'bass', 'fx', 'other'] as const;
+```
+
+`STEM_ORDER` controls the preferred display order for stem tracks in the mixer and waveform list. Stems not present in a song are simply absent from the snapshot — the order applies to whatever subset is loaded.
+
+## Constructor and Dependency Injection
+
+The engine is constructed with an `EngineOptions` object. All fields are optional, which allows unit tests to inject fakes without any browser globals:
+
+```typescript
+export class AudioEngine {
+  constructor(options: EngineOptions = {})
+}
+
+interface EngineOptions {
+  audioContext?: AudioContext;
+  fetchArrayBuffer?: (url: string) => Promise<ArrayBuffer>;
+  createPitchShiftNode?: (audioContext: AudioContext) => Promise<PitchShiftNodeLike>;
+  driftCorrectionIntervalMs?: number;
+  wait?: (milliseconds: number) => Promise<void>;
+  decodeProfile?: DecodeProfile | null;
+  createOfflineAudioContext?: (channels: number, length: number, sampleRate: number) => OfflineRenderContextLike;
+  pitchTempoMode?: PitchTempoMode;
+  createRenderedBuffer?: RenderedBufferFactory;
+}
+```
+
+<ResponseField name="audioContext" type="AudioContext" optional>
+  A browser `AudioContext` instance. Defaults to constructing a new `AudioContext` (or `webkitAudioContext`) from `window`. Inject a fake in tests to avoid browser globals.
+</ResponseField>
+
+<ResponseField name="fetchArrayBuffer" type="(url: string) => Promise<ArrayBuffer>" optional>
+  Function used to fetch stem MP3 data. Defaults to a `fetch`-based implementation that throws on non-OK responses. Inject a stub in tests to return pre-built `ArrayBuffer` values.
+</ResponseField>
+
+<ResponseField name="createPitchShiftNode" type="(audioContext: AudioContext) => Promise<PitchShiftNodeLike>" optional>
+  Factory that creates a SoundTouch AudioWorklet node for real-time pitch/tempo processing. Defaults to registering and constructing a `SoundTouchNode`.
+</ResponseField>
+
+<ResponseField name="driftCorrectionIntervalMs" type="number" optional>
+  Interval in milliseconds at which the engine polls the audio clock and emits position snapshots during playback. Defaults to `80` ms; `AppShell` raises this to `150` ms on mobile to reduce main-thread load.
+</ResponseField>
+
+<ResponseField name="decodeProfile" type="DecodeProfile | null" optional>
+  When provided, decoded stems are downmixed and/or resampled to shrink in-memory footprint. A `{ mono: true, sampleRate: 22050 }` profile drops a six-stem song from ~450 MB to ~110 MB. Omit or pass `null` for full-fidelity desktop playback.
+</ResponseField>
+
+<ResponseField name="pitchTempoMode" type="'realtime' | 'render'" optional>
+  Controls how pitch and tempo changes are applied. `'realtime'` routes audio through live SoundTouch worklets (best on desktop). `'render'` pre-renders each stem offline whenever pitch or tempo changes and plays plain decoded buffers (best on mobile, where worklets underrun). Defaults to `'realtime'`.
+</ResponseField>
+
+## Public Method Signatures
+
+### loadSong
+
+```typescript
+async loadSong(song: LoadableSong): Promise<void>
+```
+
+Loads a new song, destroying all resources from the previous song first. Accepted interface:
+
+```typescript
+interface LoadableSong {
+  id: string;
+  title: string;
+  stems: Array<{
+    name: string;   // e.g. 'bass', 'drums', 'vocals'
+    label: string;  // Display label, e.g. 'Bass'
+    url: string;    // Absolute URL to the MP3 file
+  }>;
+}
+```
+
+Behavior:
+- Calls `destroy()` to release previous audio buffers and nodes
+- Sets `loading: true` and emits a snapshot immediately
+- Fetches all stems concurrently with `fetchArrayBuffer`
+- Decodes each buffer with `AudioContext.decodeAudioData()`
+- Applies `decodeProfile` downmix/resample if configured
+- Sets `duration` to the maximum decoded buffer duration across all stems
+- Collects errors per stem; throws with a combined message if any stem failed
+
+### play
+
+```typescript
+async play(): Promise<void>
+```
+
+Starts synchronized playback from the current position. Returns immediately if already playing, if the engine is still starting up, if no stems are loaded, or if there are load errors.
+
+Behavior:
+- Resumes the `AudioContext` (required after user gesture on some browsers)
+- Initializes SoundTouch worklet nodes for any stems that need pitch/tempo shifting (realtime mode)
+- Advances the playback epoch so any in-flight graph work is discarded if superseded
+- Calculates a shared `startedAt` timestamp from `audioContext.currentTime`
+- Creates one `AudioBufferSourceNode` per loaded stem and starts all of them from the same offset — the shared offset guarantees synchronization
+- Starts the drift correction interval timer
+
+### pause
+
+```typescript
+pause(): void
+```
+
+Pauses playback at the current position.
+
+Behavior:
+- Captures `getPosition()` (wall-clock–adjusted playhead) before stopping sources
+- Stops and disconnects all `AudioBufferSourceNode` instances
+- Sets `playing: false` and advances the epoch
+- Restores master gain in case a render/transition fade was in progress
+- Stops the drift correction timer
+
+### stop
+
+```typescript
+stop(): void
+```
+
+Stops playback and resets the playhead to `0`.
+
+Behavior:
+- Stops and disconnects all `AudioBufferSourceNode` instances
+- Sets `playing: false` and `position: 0`
+- Advances the epoch so orphaned async operations abandon themselves
+
+### seek
+
+```typescript
+seek(time: number): void
+```
+
+Moves the playhead to `time` seconds, clamped to `[0, duration]`.
+
+Behavior:
+- Clamps the requested position; non-finite values resolve to `0`
+- Advances the epoch
+- If currently playing: stops existing source nodes, resets `startedAt` to `audioContext.currentTime`, and creates new source nodes starting from the new offset — all stems remain synchronized at the new position
+
+### setVolume
+
+```typescript
+setVolume(name: string, volume: number): void
+```
+
+Sets the volume for a named stem. `volume` is clamped to `[0, 1]`. The gain change is applied through a short linear ramp (`DEFAULT_RAMP_SECONDS = 0.018`) to avoid audible clicks.
+
+### setMuted
+
+```typescript
+setMuted(name: string, muted: boolean): void
+```
+
+Mutes or unmutes a stem. A muted stem has its effective gain set to `0` via its per-stem `GainNode`, regardless of its volume setting.
+
+### setSolo
+
+```typescript
+setSolo(name: string, solo: boolean): void
+```
+
+Solos or un-solos a stem. When any stem has `solo: true`, all stems without `solo: true` have their effective gain forced to `0`. All gain changes use the short linear ramp.
+
+### setTempoRatio
+
+```typescript
+async setTempoRatio(value: number): Promise<void>
+```
+
+Changes the playback speed. `value` is clamped to `[0.5, 1.5]`. In `realtime` mode, live worklet playback rates are updated. In `render` mode, all stems are re-rendered offline at the new tempo ratio before playback resumes.
+
+### setGlobalTransposeSemitones
+
+```typescript
+async setGlobalTransposeSemitones(value: number): Promise<void>
+```
+
+Transposes all pitch-adjustable stems (everything except drums) by the given number of semitones. Clamps to the SoundTouch-supported range. In `render` mode, triggers an offline re-render of all stems.
+
+### adjustGlobalTransposeSemitones
+
+```typescript
+async adjustGlobalTransposeSemitones(delta: number): Promise<void>
+```
+
+Convenience wrapper that adds `delta` to the current `globalTransposeSemitones` and calls `setGlobalTransposeSemitones`.
+
+### subscribe
+
+```typescript
+subscribe(listener: (snapshot: AudioEngineSnapshot) => void): () => void
+```
+
+Registers a listener that receives an `AudioEngineSnapshot` on every state change. Returns an unsubscribe function. The listener is called immediately with the current snapshot when registered.
+
+### getSnapshot
+
+```typescript
+getSnapshot(): AudioEngineSnapshot
+```
+
+Returns the current immutable snapshot synchronously. The `subscribe` callback is the preferred integration path for Svelte components, but `getSnapshot` is available for one-off reads.
+
+### destroy
+
+```typescript
+destroy(): void
+```
+
+Stops all playback, disconnects and discards all audio nodes and buffers, clears stem state, and resets all position/duration/epoch counters. Called automatically by `loadSong` before loading a new song.
+
+## Audio Signal Graph
+
+Every stem has its own gain node. Gain nodes feed a single master gain node, which feeds a dynamics compressor acting as a brickwall limiter, then the `AudioContext` destination:
+
+```text
+AudioBufferSourceNode (per stem)
+  └── [PitchShiftNode (SoundTouch worklet, realtime mode only)]
+      └── GainNode (per stem)
+          └── AnalyserNode (per stem, for VU meter)
+              └── masterGainNode (GainNode)
+                  └── masterLimiterNode (DynamicsCompressorNode)
+                      └── AudioContext.destination
+```
+
+The limiter uses a high ratio (`20:1`), fast attack (`3 ms`), and moderate release (`120 ms`) to prevent hard clipping from summed stems or time-stretch overshoot.
+
+## Gain Routing Rules
+
+<Expandable title="How mute, solo, and volume interact">
+  The effective gain for each stem is computed by `applyGainState()`:
+
+  1. If any stem has `solo: true`, check whether the current stem is in the solo set.
+  2. If the stem is muted **or** silenced by solo logic, `effectiveGain = 0`.
+  3. Otherwise `effectiveGain = stem.volume` (the 0–1 user-set value).
+
+  All gain changes are applied through `linearRampToValueAtTime` over `DEFAULT_RAMP_SECONDS` (18 ms) to avoid zipper noise.
+</Expandable>
+
+## Snapshot Shape
+
+```typescript
+export interface AudioEngineSnapshot {
+  songId: string | null;
+  title: string | null;
+  globalTransposeSemitones: number;
+  duration: number;
+  position: number;
+  tempoRatio: number;
+  playing: boolean;
+  loading: boolean;
+  /** True while stems are being re-rendered offline after a transpose/tempo change. */
+  rendering: boolean;
+  /** Progress of the in-flight offline render (done of total stems). */
+  renderProgress: { done: number; total: number };
+  errors: string[];
+  stems: Record<string, StemPlaybackState>;
+}
+
+export interface StemPlaybackState {
+  name: string;
+  label: string;
+  url: string;
+  loading: boolean;
+  loaded: boolean;
+  error: string | null;
+  muted: boolean;
+  solo: boolean;
+  volume: number;
+  effectiveGain: number;
+  meterLevel: number;
+  pitchAdjustable: boolean;
+  effectivePitchSemitones: number;
+  pitchShiftError: string | null;
+}
+```
+
+Snapshots are plain objects — no class instances, no circular references. Components can safely spread or destructure them.
+
+## Concurrency and Safety Guards
+
+Three interlocking mechanisms prevent race conditions when the user rapidly changes songs, seeks, or toggles pitch:
+
+<CardGroup cols={3}>
+  <Card title="Playback Epoch" icon="clock-rotate-left" href="/architecture/audio-engine">
+    Every action that changes playback state (play, pause, stop, seek, load, transpose) increments an integer epoch counter. Async operations that build or restart the audio graph capture the epoch before they start and check it before starting sources — if the epoch has advanced, the operation abandons itself silently.
+  </Card>
+  <Card title="Start Guard" icon="shield-check" href="/architecture/audio-engine">
+    A `starting` boolean prevents duplicate `play` calls from racing while the SoundTouch worklet is initializing (which can take tens of milliseconds). If `play()` is called again before initialization completes, the second call returns immediately.
+  </Card>
+  <Card title="Graph Mutation Queue" icon="list-check" href="/architecture/audio-engine">
+    All audio graph rebuilds run inside `runExclusive()`, which serializes them through a promise chain (`graphMutation`). Back-to-back transpose changes cannot overlap into interleaved source sets, even if the user moves a slider quickly.
+  </Card>
+</CardGroup>
+
+## Pitch and Tempo: Realtime vs. Render Mode
+
+<Expandable title="Realtime mode (desktop default)">
+  Each stem that requires pitch or tempo adjustment is routed through a SoundTouch `AudioWorkletNode` inserted between the `AudioBufferSourceNode` and the per-stem `GainNode`. The worklet processes audio live on the audio thread. When pitch or tempo changes during playback, the engine fades the master gain to zero, swaps out source nodes with updated worklet parameters, and fades back in — the transition takes approximately 30 ms.
+</Expandable>
+
+<Expandable title="Render mode (mobile default)">
+  Instead of live worklets, the engine pre-renders each stem offline into a new `AudioBuffer` using `OfflineAudioContext` and the SoundTouch `processOffline` API. Up to three stems are rendered concurrently (`RENDER_CONCURRENCY = 3`) to bound peak memory. The `rendering` snapshot field is `true` while renders are in flight, and `renderProgress.done / renderProgress.total` tracks progress for the UI indicator. Playback resumes from the pre-rendered buffers at the exact position where the change was requested. Drums (pitch = 0) are still rendered through the same offline pass when any other stem is transposed, to keep all stems phase-locked through the constant time offset the SoundTouch processor introduces.
+</Expandable>
+
+<Note>
+`AppShell.svelte` sets `pitchTempoMode: 'render'` automatically on mobile viewports (`max-width: 820px`) where running several live worklets simultaneously would underrun the audio thread and cause stems to fall out of sync.
+</Note>
+
+## Testing
+
+`src/lib/audio/AudioEngine.test.ts` exercises the engine by injecting a fake `AudioContext` and a fake `fetchArrayBuffer` through the constructor — no real browser audio APIs are needed:
+
+```typescript
+const engine = new AudioEngine({
+  audioContext: new FakeAudioContext() as unknown as AudioContext,
+  fetchArrayBuffer: async (url) => fakeBuffers[url],
+});
+```
+
+Test coverage includes:
+
+- Stem loading and per-stem snapshot state (`loading`, `loaded`, `error`)
+- Synchronized source starts (all sources started at the same `AudioContext.currentTime`)
+- Seeking: position clamping, source node recreation while playing
+- Gain state: volume, mute, solo, effective gain computation
+- Resource cleanup: `destroy()` disconnects all nodes and clears all state
+- Epoch guard: async graph work initiated before a `stop` is discarded correctly
+
+See also [Stack](/architecture/stack) for the Vitest configuration and overall testing approach.

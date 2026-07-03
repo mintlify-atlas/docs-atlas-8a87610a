@@ -1,0 +1,162 @@
+---
+title: "Lyrics Viewer and Chord Chart Display"
+sidebarTitle: "Lyrics & Chords"
+description: "View lyrics and chord progressions per section in 4Stem Band Player. Covers the Lyrics panel, chord format, section seek markers, and song notes."
+---
+
+4Stem Band Player surfaces two types of textual song data alongside the playback controls: a floating **Lyrics panel** for verbatim lyric text and a **Song Info panel** for structured metadata including key, BPM, time signature, chord progressions, rehearsal notes, and named section markers.
+
+## Lyrics Panel
+
+The **Lyrics** button in the [Transport Controls](/player/transport-controls) bar opens a floating panel below the transport area. The panel includes a close button and hides itself (`aria-hidden`) when closed so it does not interfere with keyboard navigation when not in use.
+
+Lyrics text is rendered inside a `<pre>` element that preserves all whitespace, line breaks, and indentation exactly as written in `lyrics.md`. If no lyrics file exists or the file is empty, the panel shows "No lyrics are available for this song."
+
+### Sample `lyrics.md`
+
+```markdown
+[Verse 1]
+Here the first verse begins
+Each line exactly as written
+Blank lines mark stanza breaks
+
+[Pre-Chorus]
+Building up, building up
+
+[Chorus]
+This is the chorus line
+Repeated with feeling
+```
+
+<Note>
+  An empty `lyrics.md` is a **warning**, not a validation error. The song will still load and the Lyrics button will be disabled (or show the empty-state message) rather than blocking playback.
+</Note>
+
+## Song Info Panel
+
+The Song Info panel is always visible below the stem mixer. It shows the song title, artist, and a metadata grid with the following fields drawn from `song.json`:
+
+| Field | Source key | Example |
+|---|---|---|
+| Key | `key` | `Am` |
+| BPM | `bpm` | `96` |
+| Time | `timeSignature` | `4/4` |
+| Duration | `duration` | `4:06` |
+| Seconds | `durationSeconds` | `246` |
+
+Duration and Seconds fall back to the value measured from loaded stem buffers when the `song.json` fields are absent.
+
+## Chord Chart
+
+When `song.json` includes a `chords` field, the Song Info panel renders a formatted chord chart below the metadata grid. The `chords` field accepts two formats:
+
+<Tabs>
+  <Tab title="Structured object (preferred)">
+    A `Record` where each key is a section name and the value is either a plain progression string or a full section object with an optional `label`, required `progression`, and optional `notes`.
+
+    ```json
+    {
+      "chords": {
+        "intro": {
+          "label": "Intro",
+          "progression": "Am  F  C  G",
+          "notes": "Palm mute throughout"
+        },
+        "verse": {
+          "label": "Verse",
+          "progression": "Am  F  C  G"
+        },
+        "prechorus": "Em  F  Am  G",
+        "chorus": {
+          "label": "Chorus",
+          "progression": "C  G  Am  F",
+          "notes": "Full band enters on beat 1"
+        },
+        "bridge": {
+          "label": "Bridge",
+          "progression": "F  C  G  Am",
+          "notes": "Key guitarist plays lead over this"
+        }
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Legacy string">
+    A single plain-text string containing the entire chord chart. Still valid and displayed as-is in a `<pre>` block.
+
+    ```json
+    {
+      "chords": "Verse: Am F C G\nChorus: C G Am F\nBridge: F C G Am"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+The `formatChords` helper in `SongInfoPanel.svelte` converts either format into display text.
+
+## Section Markers
+
+Section markers appear in two places: the **Sections** floating panel (for seeking) and the Song Info panel (for context). Each marker in the `sections` array requires a `label` and a numeric `start` time in seconds from the beginning of the song. An optional `end` time is supported but not displayed in the current UI.
+
+### Sample `song.json` with Sections and Chords
+
+```json
+{
+  "title": "Glory Box",
+  "artist": "Portishead",
+  "key": "Dm",
+  "bpm": 76,
+  "timeSignature": "4/4",
+  "duration": "5:06",
+  "durationSeconds": 306,
+  "sections": [
+    { "label": "Intro",    "start": 0   },
+    { "label": "Verse 1",  "start": 22  },
+    { "label": "Pre",      "start": 64  },
+    { "label": "Chorus",   "start": 86  },
+    { "label": "Verse 2",  "start": 118 },
+    { "label": "Chorus 2", "start": 182 },
+    { "label": "Outro",    "start": 240 }
+  ],
+  "chords": {
+    "intro": {
+      "label": "Intro",
+      "progression": "Dm  Bb  F  C"
+    },
+    "verse": {
+      "label": "Verse",
+      "progression": "Dm  Bb  F  C",
+      "notes": "Guitar enters on second repeat"
+    },
+    "chorus": {
+      "label": "Chorus",
+      "progression": "F  C  Dm  Bb"
+    }
+  },
+  "notes": "Capo 2 for live performance. Drum loop is 2-bar; count in carefully.",
+  "lyrics": "lyrics.md"
+}
+```
+
+## Song Notes
+
+The optional `notes` field in `song.json` holds freeform rehearsal notes — key changes, capo instructions, performance cues, or anything else the band needs to remember. Notes appear in their own section beneath the chord chart in the Song Info panel.
+
+## Section Navigation from the Sections Panel
+
+Pressing the **Sections** button in the transport opens a floating panel that lists every `sections` entry as a seek button. Pressing a button jumps the playhead to that section's `start` time, exactly as if you had dragged the transport seek slider to that position. See [Transport Controls](/player/transport-controls) for the full sections panel behaviour.
+
+<Accordion title="Mobile scroll behaviour">
+  On mobile, opening any of the floating panels — Sections, Lyrics, or Mixer — automatically scrolls the panel into view. Closing the panel scrolls back to the top of the page so the transport controls are immediately visible again.
+</Accordion>
+
+## Data Contract Summary
+
+<CardGroup cols={2}>
+  <Card title="song.json Schema" icon="file-code" href="/architecture/data-contracts">
+    Full TypeScript interface for `SongMetadata` including all optional fields, validation rules, and the two chord formats.
+  </Card>
+  <Card title="Ingestion Workflow" icon="gears" href="/songs/ingestion-workflow">
+    How `npm run songs:prepare` validates metadata, detects BPM, generates peak files, and regenerates the manifest.
+  </Card>
+</CardGroup>

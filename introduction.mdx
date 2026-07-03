@@ -1,0 +1,83 @@
+---
+title: "4Stem Band Player: Browser-Based Multi-Stem Rehearsal"
+sidebarTitle: "Introduction"
+description: "4Stem Band Player is a static SvelteKit app for synchronized multi-stem rehearsal. No server, no auth — stems, waveforms, and transport controls."
+---
+
+4Stem Band Player is a browser-based rehearsal tool that loads a static song catalog, decodes up to seven MP3 stems per song entirely in the browser, and plays them in perfect synchronization using the Web Audio API. There is no server, no account, and no upload form — everything runs from pre-placed static files.
+
+## What It Does
+
+The player fetches a `manifest.json` catalog at startup, then for the selected song it decodes all available MP3 stems concurrently and locks them to a single shared playhead. You can mute or solo any stem, adjust its volume with a fader, and seek anywhere in the song by clicking a waveform rendered from precomputed peak files. A compact floating Mixer panel exposes vertical faders and live LED meters for each stem, synchronized with the full stem rows below.
+
+Additional tools built into the player include:
+
+- **Transport controls** — Play, Pause, Stop, and waveform seek, plus a Space bar shortcut for play/pause
+- **Global transpose** — shift all non-drum stems up or down by semitone using SoundTouch AudioWorklet pitch processing
+- **Section navigation** — jump directly to named markers within a song
+- **Lyrics viewer** — formatted lyrics rendered from a Markdown file bundled with each song
+- **Chord charts** — structured chord metadata displayed alongside section markers
+- **Low-memory (Lite) mode** — downmixes stems to mono at 22 kHz to reduce decoded memory footprint on mobile devices
+- **PWA install** — installable to a phone home screen; songs cached after first play are available offline
+- **Media Session integration** — lock screen and Bluetooth controls work with the player's transport state
+
+## Supported Stems
+
+The preferred rendering order for stems is `vocals`, `guitar`, `strings`, `drums`, `bass`, `fx`, and `other`. Any stem present in the song folder is loaded automatically. The three **required** stems for every song are `bass`, `drums`, and `vocals`; all others are optional.
+
+## Built-in Song Catalog
+
+Five demo songs ship with the repository and are ready to play immediately after cloning:
+
+| Folder | Title | Artist |
+|---|---|---|
+| `Bambola` | La bambola | Patty Pravo |
+| `GloryBox` | Glory Box | Portishead |
+| `IkesRap2` | Ike's Rap 2 | Isaac Hayes |
+| `SendHLTMe` | Send His Love to Me | PJ Harvey |
+| `YouMightThink` | You Might Think | The Cars |
+
+Each folder contains the MP3 stems, precomputed waveform peak JSON files, `song.json` metadata, and a `lyrics.md` file.
+
+## Technical Foundation
+
+| Layer | Technology |
+|---|---|
+| App framework | SvelteKit 2 with `@sveltejs/adapter-static` |
+| UI runtime | Svelte 5 (runes syntax — `$state`, `$derived`, `$effect`, `$props`) |
+| Language | TypeScript 6 |
+| Build tool | Vite 8 |
+| Audio engine | Web Audio API (`AudioContext`, `AudioBufferSourceNode`, `GainNode`) |
+| Waveform rendering | WaveSurfer.js 7 with precomputed peak files |
+| Pitch shifting | SoundTouch `@soundtouchjs/audio-worklet` |
+| Tests | Vitest 4 — 17 test files, 100 tests |
+
+The SvelteKit route is fully prerendered to static HTML. All audio work starts after the browser mounts the component, so there is no server-side audio dependency of any kind.
+
+## What This App Is Not
+
+- **No upload UI.** New songs are added by placing files in `static/songs/` and running a preparation script.
+- **No authentication or user accounts.** The app is fully public and stateless on the server.
+- **No server-side song management.** The catalog is a static JSON file generated at build time.
+- **No persistent mix settings.** Volume, mute, and solo state reset when you switch songs. The player does remember your theme, last-selected song, and Lite mode preference in `localStorage`.
+
+<Note>
+  To add a new song, place its MP3 stems and metadata in `static/songs/<SongFolder>/`, then run `npm run songs:prepare` to validate the folder, generate waveform peaks, and regenerate the manifest.
+</Note>
+
+## Where to Go Next
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Clone the repo, install dependencies, and run the dev server in under five minutes.
+  </Card>
+  <Card title="Adding Songs" icon="music" href="/songs/overview">
+    Learn the song folder structure, required stems, and the preparation workflow.
+  </Card>
+  <Card title="Player Controls" icon="play" href="/player/transport-controls">
+    Explore transport controls, the mixer panel, transpose, and keyboard shortcuts.
+  </Card>
+  <Card title="Architecture" icon="layer-group" href="/architecture/stack">
+    Understand the SvelteKit static adapter, audio engine, and state ownership model.
+  </Card>
+</CardGroup>

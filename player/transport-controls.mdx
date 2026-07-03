@@ -1,0 +1,127 @@
+---
+title: "Transport Controls and Playback Navigation"
+sidebarTitle: "Transport Controls"
+description: "Play, pause, stop, and seek through songs in 4Stem Band Player. Covers the transport bar, section markers, Space bar shortcut, and loading states."
+---
+
+The transport bar is the primary command surface for playback in 4Stem Band Player. It sits above the stem mixer, displays the current song title, and exposes every control you need to navigate through a song — from basic play/pause to jumping directly to named rehearsal sections.
+
+## Layout
+
+The transport panel is organised into two rows of buttons beneath the song title heading.
+
+<CardGroup cols={2}>
+  <Card title="First Row" icon="circle-play" href="/player/transport-controls">
+    **Play / Pause**, **Stop**, and **Mixer** — the core playback actions and access to the floating mixer panel.
+  </Card>
+  <Card title="Second Row" icon="list-music" href="/player/transport-controls">
+    **Sections** and **Lyrics** — open floating panels that sit directly below the transport area.
+  </Card>
+</CardGroup>
+
+The **Sections** button is only enabled when the loaded song defines at least one section marker in its `song.json`. The **Lyrics** button is only enabled when a `lyrics.md` file is present and non-empty. The **Mixer** button is only enabled when the audio engine has stems loaded.
+
+## Playback Position Readouts
+
+Below the button rows, a seek slider tracks the live playhead. Two output labels sit beneath it:
+
+- **`m:ss of m:ss`** — formatted time, e.g. `1:23 of 4:06`
+- **Seconds-only** — rounded position in seconds, e.g. `83 seconds`
+
+Both update in real time during playback and remain readable on small screens where the formatted label would wrap.
+
+## Play, Pause, and Stop
+
+The first button in the primary row toggles between **Play** and **Pause** based on engine state — the label changes to reflect the current action.
+
+<Steps>
+  <Step title="Play">
+    Starts all loaded stems from the current playhead position. If the engine is already at the end of the song, playback starts from the beginning.
+  </Step>
+  <Step title="Pause">
+    Stops all audio sources but retains the current position. Pressing Play resumes from the same point.
+  </Step>
+  <Step title="Stop">
+    Stops all audio sources **and resets the position to 0**. Pressing Play after Stop always starts from the beginning of the song.
+  </Step>
+</Steps>
+
+## Seeking
+
+You can seek in two ways:
+
+1. **Transport seek slider** — drag or click anywhere along the range input beneath the transport readouts. The playhead jumps immediately; if playback was running it continues from the new position.
+2. **Stem waveform** — click any point on a waveform in the stem mixer. All stems seek to that position simultaneously. See [Stem Mixer](/player/stem-mixer) for waveform details.
+
+Seeking while playing recreates the underlying audio source nodes from the new offset so all stems stay frame-accurate with each other.
+
+## Section Markers
+
+When a song defines sections in `song.json`, the **Sections** button opens a floating panel below the transport area. Each entry shows the section label and acts as a seek button — pressing it jumps the playhead to that section's start time.
+
+```json
+"sections": [
+  { "label": "Intro",   "start": 0   },
+  { "label": "Verse 1", "start": 14  },
+  { "label": "Chorus",  "start": 42  },
+  { "label": "Bridge",  "start": 98  },
+  { "label": "Outro",   "start": 134 }
+]
+```
+
+Section markers also appear in the [Lyrics & Chords](/player/lyrics-chords) page for contextual navigation. On mobile, opening the Sections panel scrolls it into view; closing it scrolls back to the top of the page.
+
+## Space Bar Shortcut
+
+Pressing **Space** from anywhere on the page toggles play/pause without needing to click the transport button.
+
+The shortcut is intentionally ignored in the following contexts so it does not interrupt text entry:
+
+- Inside `<input>` fields
+- Inside `<select>` dropdowns
+- Inside `<textarea>` elements
+- Inside any element with `contenteditable` set
+
+Key-repeat events (holding Space down) are also ignored — only the initial keydown fires the toggle.
+
+## Loading States and Disabled Controls
+
+All transport buttons are **disabled** in three situations:
+
+1. While the current song is actively loading stems or waveforms
+2. Before the audio engine has produced its first snapshot
+3. When the engine reports load errors that prevent playback
+
+During loading, the UI shows an indeterminate progress bar and skeleton placeholder elements for stems and waveforms. Loading resolves in stages:
+
+<Steps>
+  <Step title="Manifest fetch">
+    The app fetches `/songs/manifest.json` to build the song catalog. The UI shows "Loading song manifest…" while this is pending.
+  </Step>
+  <Step title="Song metadata">
+    After selecting a song, `song.json` and `lyrics.md` are fetched.
+  </Step>
+  <Step title="Stem decode">
+    Each MP3 stem is fetched and decoded. Per-stem rows show a **Loading** status badge until their buffer is ready, then switch to **Ready**.
+  </Step>
+  <Step title="Waveform render">
+    WaveSurfer renders each waveform. If a precomputed `.peaks.json` file is available it is used to skip a second decode pass.
+  </Step>
+</Steps>
+
+## Error States
+
+<Note>
+  Transport controls remain disabled as long as any error condition blocks playback. Resolve the underlying issue (usually a missing or corrupt stem file) and reload the song to recover.
+</Note>
+
+The expected error states from the application spec are:
+
+| State | Display |
+|---|---|
+| Manifest loading failure | "Load error" alert section |
+| Empty catalog | "No songs were found in /songs/manifest.json." |
+| Stem failure | Per-stem **Error** status badge and inline alert text |
+| Waveform failure | Waveform overlay with local error description |
+
+See [Data Contracts](/architecture/data-contracts) for the full manifest and `song.json` schemas, and [Songs Overview](/songs/overview) for troubleshooting missing stems.

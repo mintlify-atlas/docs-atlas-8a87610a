@@ -1,0 +1,408 @@
+---
+title: "Data Contracts: Types, Manifest, and Peak Files"
+sidebarTitle: "Data Contracts"
+description: "TypeScript interfaces and file shapes used by 4Stem Band Player: SongMetadata, SongManifest, SongManifestEntry, SongBundle, PeaksFile, and ChordSection."
+---
+
+All data exchanged between the static file server and the browser is plain JSON or Markdown. There is no dynamic API — the browser loads a manifest, fetches per-song JSON and Markdown files, and fetches pre-generated peak data for waveform rendering. This page documents every TypeScript interface that describes those files, where each file lives on disk, and how the files are generated.
+
+## Complete Type Definitions
+
+The canonical source of truth is `src/lib/types.ts`. The full file is reproduced here for reference:
+
+```typescript
+export interface SectionMarker {
+  label: string;
+  start: number;
+  end?: number;
+}
+
+export interface ChordSection {
+  label?: string;
+  progression: string;
+  notes?: string;
+}
+
+export type SongChords = string | Record<string, string | ChordSection>;
+
+export interface SongMetadata {
+  title: string;
+  artist: string;
+  key: string;
+  bpm: number;
+  timeSignature: string;
+  duration?: string;
+  durationSeconds?: number;
+  chords?: SongChords;
+  notes?: string;
+  lyrics?: string;
+  sections?: SectionMarker[];
+}
+
+export interface SongManifestEntry {
+  id: string;
+  folder: string;
+  title: string;
+  artist: string;
+  bpm: number;
+  key: string;
+  timeSignature: string;
+  songJsonUrl: string;
+  lyricsUrl: string;
+  stems: Record<string, string>;
+  peaks?: Partial<Record<string, string>>;
+}
+
+export interface SongManifest {
+  generatedAt: string;
+  songs: SongManifestEntry[];
+}
+
+export interface SongBundle {
+  manifestEntry: SongManifestEntry;
+  metadata: SongMetadata;
+  lyricsMarkdown: string;
+}
+```
+
+---
+
+## SongMetadata
+
+**File:** `static/songs/<Folder>/song.json`
+
+`SongMetadata` is the shape of each song's `song.json` file. It carries all human-readable and structural information about the song.
+
+<ResponseField name="title" type="string" required>
+  The display title of the song, for example `"Glory Box"`.
+</ResponseField>
+
+<ResponseField name="artist" type="string" required>
+  The artist or band name, for example `"Portishead"`.
+</ResponseField>
+
+<ResponseField name="key" type="string" required>
+  The musical key of the song, for example `"D minor"` or `"G major"`.
+</ResponseField>
+
+<ResponseField name="bpm" type="number" required>
+  Beats per minute. Must be a numeric value; the validator rejects string BPM values.
+</ResponseField>
+
+<ResponseField name="timeSignature" type="string" required>
+  Time signature string, for example `"4/4"` or `"6/8"`.
+</ResponseField>
+
+<ResponseField name="duration" type="string" optional>
+  Human-readable duration in `m:ss` format, for example `"5:06"`. Used by `SongInfoPanel` when displaying song length. Either `duration` or `durationSeconds` (or both) may be present.
+</ResponseField>
+
+<ResponseField name="durationSeconds" type="number" optional>
+  Total duration in whole seconds, for example `306`. The UI derives a formatted string from this when `duration` is absent.
+</ResponseField>
+
+<ResponseField name="chords" type="string | Record<string, string | ChordSection>" optional>
+  Chord information. Can be a plain legacy string (`"Am - F - C - G"`) or a structured object whose keys are section identifiers. Each value is either a short progression string or a full `ChordSection` object. See [ChordSection](#chordsection) below.
+</ResponseField>
+
+<ResponseField name="notes" type="string" optional>
+  Free-form notes about the song — arrangement tips, key changes, capo position, or anything else useful for rehearsal.
+</ResponseField>
+
+<ResponseField name="lyrics" type="string" optional>
+  Inline lyrics as a plain string. The preferred approach is a separate `lyrics.md` file; this field exists for backwards compatibility.
+</ResponseField>
+
+<ResponseField name="sections" type="SectionMarker[]" optional>
+  Ordered list of named section markers. Each section has a `label`, a `start` time in seconds, and an optional `end` time. The `SectionsPopover` component renders these as jump buttons. See [SectionMarker](#sectionmarker) below.
+</ResponseField>
+
+### Example song.json
+
+```json
+{
+  "title": "Glory Box",
+  "artist": "Portishead",
+  "key": "D minor",
+  "bpm": 82,
+  "timeSignature": "4/4",
+  "duration": "5:06",
+  "durationSeconds": 306,
+  "chords": {
+    "verse": {
+      "label": "Verse",
+      "progression": "Dm - Am - C - G",
+      "notes": "Repeat 4 times"
+    },
+    "chorus": "Dm - Bb - F - C"
+  },
+  "notes": "Bass enters on bar 3.",
+  "sections": [
+    { "label": "Intro", "start": 0, "end": 18 },
+    { "label": "Verse 1", "start": 18 }
+  ]
+}
+```
+
+---
+
+## ChordSection
+
+`ChordSection` is the structured form of a single chord section inside the `chords` map.
+
+<ResponseField name="label" type="string" optional>
+  Display label for the section, for example `"Verse"`. When absent, the key from the parent object is title-cased and used as the label.
+</ResponseField>
+
+<ResponseField name="progression" type="string" required>
+  The chord progression for this section, for example `"Am - F - C - G"`.
+</ResponseField>
+
+<ResponseField name="notes" type="string" optional>
+  Additional notes specific to this section, for example `"Repeat 4×"` or `"Half-time feel"`.
+</ResponseField>
+
+---
+
+## SectionMarker
+
+`SectionMarker` describes a named point or range in the song timeline, used for jump-to-section navigation.
+
+<ResponseField name="label" type="string" required>
+  Human-readable section name, for example `"Chorus"`, `"Bridge"`, or `"Guitar Solo"`.
+</ResponseField>
+
+<ResponseField name="start" type="number" required>
+  Start time in seconds from the beginning of the song.
+</ResponseField>
+
+<ResponseField name="end" type="number" optional>
+  End time in seconds. When absent the section is treated as a point marker rather than a range.
+</ResponseField>
+
+---
+
+## SongManifestEntry
+
+**File:** `static/songs/manifest.json` → `.songs[]`
+
+Each entry in the manifest corresponds to one song folder. `AppShell` uses entries to populate the song selector and to construct the `LoadableSong` passed to `AudioEngine.loadSong()`.
+
+<ResponseField name="id" type="string" required>
+  Unique song identifier derived from the folder name, for example `"GloryBox"`.
+</ResponseField>
+
+<ResponseField name="folder" type="string" required>
+  The song's folder name under `static/songs/`, for example `"GloryBox"`.
+</ResponseField>
+
+<ResponseField name="title" type="string" required>
+  Song title, copied from `song.json` at manifest generation time.
+</ResponseField>
+
+<ResponseField name="artist" type="string" required>
+  Artist name, copied from `song.json`.
+</ResponseField>
+
+<ResponseField name="bpm" type="number" required>
+  BPM, copied from `song.json`.
+</ResponseField>
+
+<ResponseField name="key" type="string" required>
+  Musical key, copied from `song.json`.
+</ResponseField>
+
+<ResponseField name="timeSignature" type="string" required>
+  Time signature, copied from `song.json`.
+</ResponseField>
+
+<ResponseField name="songJsonUrl" type="string" required>
+  URL-encoded path to the song's `song.json`, for example `/songs/GloryBox/song.json`.
+</ResponseField>
+
+<ResponseField name="lyricsUrl" type="string" required>
+  URL-encoded path to the song's `lyrics.md`, for example `/songs/GloryBox/lyrics.md`.
+</ResponseField>
+
+<ResponseField name="stems" type="Record<string, string>" required>
+  Map of stem name to URL-encoded MP3 path. Always includes at minimum `bass`, `drums`, and `vocals`. May also include `guitar`, `strings`, `fx`, and `other` if those files exist in the folder. Example:
+  ```json
+  {
+    "bass":   "/songs/GloryBox/GloryBox_bass.mp3",
+    "drums":  "/songs/GloryBox/GloryBox_drums.mp3",
+    "vocals": "/songs/GloryBox/GloryBox_vocals.mp3",
+    "guitar": "/songs/GloryBox/GloryBox_guitar.mp3"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="peaks" type="Partial<Record<string, string>>" optional>
+  Map of stem name to URL-encoded peaks JSON path. Present only for stems whose `.peaks.json` file exists. Example:
+  ```json
+  {
+    "bass":   "/songs/GloryBox/GloryBox_bass.peaks.json",
+    "drums":  "/songs/GloryBox/GloryBox_drums.peaks.json",
+    "vocals": "/songs/GloryBox/GloryBox_vocals.peaks.json"
+  }
+  ```
+  When a peaks file is absent for a stem, WaveSurfer fetches and decodes the MP3 to generate the waveform on the fly — which is slower and uses more CPU.
+</ResponseField>
+
+---
+
+## SongManifest
+
+**File:** `static/songs/manifest.json`
+
+The top-level manifest file loaded at startup by `loadSongManifest()`.
+
+<ResponseField name="generatedAt" type="string" required>
+  ISO 8601 timestamp of when the manifest was last generated, for example `"2026-05-20T14:32:00.000Z"`. Updated every time `songs:prepare` runs.
+</ResponseField>
+
+<ResponseField name="songs" type="SongManifestEntry[]" required>
+  Ordered list of all song entries. The order matches the filesystem sort order of song folders.
+</ResponseField>
+
+### Example manifest.json (abbreviated)
+
+```json
+{
+  "generatedAt": "2026-05-20T14:32:00.000Z",
+  "songs": [
+    {
+      "id": "GloryBox",
+      "folder": "GloryBox",
+      "title": "Glory Box",
+      "artist": "Portishead",
+      "bpm": 82,
+      "key": "D minor",
+      "timeSignature": "4/4",
+      "songJsonUrl": "/songs/GloryBox/song.json",
+      "lyricsUrl": "/songs/GloryBox/lyrics.md",
+      "stems": {
+        "bass":   "/songs/GloryBox/GloryBox_bass.mp3",
+        "drums":  "/songs/GloryBox/GloryBox_drums.mp3",
+        "vocals": "/songs/GloryBox/GloryBox_vocals.mp3"
+      },
+      "peaks": {
+        "bass":   "/songs/GloryBox/GloryBox_bass.peaks.json",
+        "drums":  "/songs/GloryBox/GloryBox_drums.peaks.json",
+        "vocals": "/songs/GloryBox/GloryBox_vocals.peaks.json"
+      }
+    }
+  ]
+}
+```
+
+<Note>
+`manifest.json` is regenerated every time `songs:prepare` runs. The `generatedAt` field always updates, even if the songs themselves have not changed. Commit the updated manifest to source control after adding or renaming any song file.
+</Note>
+
+---
+
+## SongBundle
+
+`SongBundle` is the runtime in-memory object `AppShell` holds once a song has been fully loaded. It is never written to disk.
+
+<ResponseField name="manifestEntry" type="SongManifestEntry" required>
+  The original manifest entry for the song, providing stem URLs, peaks URLs, and basic display metadata.
+</ResponseField>
+
+<ResponseField name="metadata" type="SongMetadata" required>
+  The full parsed `song.json` object, including chords, notes, sections, and timing metadata.
+</ResponseField>
+
+<ResponseField name="lyricsMarkdown" type="string" required>
+  The raw Markdown text from `lyrics.md`. Displayed by `LyricsViewer` inside a preserved-whitespace block. May be an empty string if the file exists but is empty (the validator treats an empty lyrics file as a warning, not an error).
+</ResponseField>
+
+---
+
+## PeaksFile
+
+**File:** `static/songs/<Folder>/<stem>.peaks.json`
+
+Peak files let WaveSurfer render waveforms without re-decoding the MP3. Each stem has its own peaks file generated from the same MP3 used for playback.
+
+```typescript
+interface PeaksFile {
+  sampleRate: number;
+  samplesPerPixel: number;
+  peaks: number[];
+}
+```
+
+<ResponseField name="sampleRate" type="number" required>
+  The sample rate used when generating the peaks, always `8000` Hz (down-sampled mono for compact file size).
+</ResponseField>
+
+<ResponseField name="samplesPerPixel" type="number" required>
+  How many audio samples each peak value represents. Determines the horizontal resolution of the waveform.
+</ResponseField>
+
+<ResponseField name="peaks" type="number[]" required>
+  Array of peak magnitude values, one entry per `samplesPerPixel` block. Values are floats in the range `[0, 1]`. Passed directly to the WaveSurfer `peaks` option.
+</ResponseField>
+
+### Example peaks file (abbreviated)
+
+```json
+{
+  "sampleRate": 8000,
+  "samplesPerPixel": 512,
+  "peaks": [0.012, 0.134, 0.421, 0.893, 0.761, 0.502, 0.088]
+}
+```
+
+---
+
+## File Locations Summary
+
+| File | Path on disk | Served at |
+|---|---|---|
+| Song metadata | `static/songs/<Folder>/song.json` | `/songs/<Folder>/song.json` |
+| Lyrics | `static/songs/<Folder>/lyrics.md` | `/songs/<Folder>/lyrics.md` |
+| Stem MP3 | `static/songs/<Folder>/<Folder>_<stem>.mp3` | `/songs/<Folder>/<Folder>_<stem>.mp3` |
+| Peak data | `static/songs/<Folder>/<stem>.peaks.json` | `/songs/<Folder>/<stem>.peaks.json` |
+| Manifest | `static/songs/manifest.json` | `/songs/manifest.json` |
+
+---
+
+## Generating the Manifest
+
+Regenerate `manifest.json` after adding, removing, or renaming any song file:
+
+```bash
+npm run songs:manifest
+```
+
+Or run the full preparation pipeline, which validates songs, generates any missing peak files, and then regenerates the manifest:
+
+```bash
+npm run songs:prepare
+```
+
+The generator (`scripts/generate-song-manifest.ts`) URL-encodes all asset paths so that folder and file names containing spaces are safe for use in `fetch()` calls.
+
+## Generating Peak Files
+
+Peak files are generated by `scripts/generate-peaks.ts`, which shells out to `ffmpeg`:
+
+```bash
+npm run songs:peaks
+```
+
+`ffmpeg` converts each stem MP3 to mono float PCM at 8000 Hz, then the script computes peak magnitudes and writes `*.peaks.json`. Existing peak files are skipped unless they are older than their source MP3, keeping incremental runs fast.
+
+<Warning>
+Peak generation requires `ffmpeg` on your system `PATH`. Install it with your package manager (`brew install ffmpeg`, `apt install ffmpeg`, etc.) before running `songs:peaks` or `songs:prepare`.
+</Warning>
+
+Running the complete release pipeline — which includes validation, peaks generation, manifest regeneration, type checking, unit tests, and a production build — is the recommended pre-deploy command:
+
+```bash
+npm run songs:release
+```
+
+For more on the ingestion workflow, see [Songs Overview](/songs/overview) and the [CLI Reference](/songs/cli-reference).

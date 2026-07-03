@@ -1,0 +1,227 @@
+---
+title: "song.json Schema and Metadata Reference"
+sidebarTitle: "song.json"
+description: "Complete reference for song.json in 4Stem Band Player. Covers required and optional fields, chord formats, section markers, and validation rules."
+---
+
+Every song folder must contain a `song.json` file that describes the song's metadata. This file is read by the validation and manifest-generation scripts at ingestion time, and its contents are served to the browser as part of the song bundle. This page covers every supported field, the accepted chord formats, section marker syntax, and the validation rules enforced by `scripts/validate-songs.ts`.
+
+## Required Fields
+
+These five fields must be present and non-empty in every `song.json`. Validation fails and the manifest will not be regenerated if any are missing.
+
+<ParamField body="title" type="string" required>
+  The song's display title shown in the song selector and metadata panel. Example: `"Glory Box"`.
+</ParamField>
+
+<ParamField body="artist" type="string" required>
+  The performing artist or band name. Example: `"Portishead"`.
+</ParamField>
+
+<ParamField body="key" type="string" required>
+  The musical key of the song as a human-readable string. Examples: `"D#m"`, `"A minor"`, `"Gm"`. There is no enforced format — use whatever is most readable for your band.
+</ParamField>
+
+<ParamField body="bpm" type="number" required>
+  Tempo in beats per minute. Must be a JSON number, not a string. Example: `120`. Validation will fail with `bpm must be a number` if you write `"120"` instead of `120`.
+</ParamField>
+
+<ParamField body="timeSignature" type="string" required>
+  Time signature as a string. Example: `"4/4"`.
+</ParamField>
+
+## Optional Fields
+
+<ParamField body="duration" type="string">
+  Human-readable duration formatted as `m:ss`. Example: `"3:32"`. If present, must be a string — not a number.
+</ParamField>
+
+<ParamField body="durationSeconds" type="number">
+  Total duration in seconds as a plain number. Example: `212`. If present, must be a finite number.
+</ParamField>
+
+<ParamField body="chords" type="string | object">
+  Chord progressions for the song. Accepts either a simple string or a structured section object. See [Chord Formats](#chord-formats) below.
+</ParamField>
+
+<ParamField body="notes" type="string">
+  Freeform rehearsal notes displayed in the metadata panel. Useful for arrangement cues, historical context, or performance tips.
+</ParamField>
+
+<ParamField body="lyrics" type="string">
+  Inline lyrics as a Markdown string. Use this as an alternative to a separate `lyrics.md` file when lyrics are short or when embedding them directly in the JSON is more convenient.
+</ParamField>
+
+<ParamField body="sections" type="array">
+  An array of named section markers used to build the section navigation buttons in the metadata panel. See [Sections Array Format](#sections-array-format) below.
+</ParamField>
+
+## Chord Formats
+
+The `chords` field accepts two formats.
+
+### 1. Simple String
+
+Use a plain string for a single, unsectioned chord progression:
+
+```json
+{
+  "chords": "Am | F | C | G"
+}
+```
+
+This format is supported for backwards compatibility. The section object format is recommended for new songs.
+
+### 2. Section Object (Recommended)
+
+Use an object whose keys are stable section identifiers. Each value can be either a plain string (compact form) or a full section object:
+
+```json
+{
+  "chords": {
+    "intro": {
+      "progression": "Gm | D | Gm | D"
+    },
+    "verse": {
+      "label": "Verse",
+      "progression": "Gm | D | Gm | Cm | D | Gm"
+    },
+    "chorus": {
+      "label": "Refrain",
+      "progression": "Bb | Eb | Cm | D | Gm",
+      "notes": "Hold the final Gm for two bars."
+    },
+    "bridge": "Cm | Gm | D | Gm"
+  }
+}
+```
+
+Each section object supports these properties:
+
+<ParamField body="progression" type="string" required>
+  The chord progression text displayed in the chords panel. Required when the section value is an object.
+</ParamField>
+
+<ParamField body="label" type="string">
+  Display label for the section. Defaults to the title-cased version of the section key when omitted — so `"verse"` becomes `"Verse"` and `"preChorus"` becomes `"Pre Chorus"`.
+</ParamField>
+
+<ParamField body="notes" type="string">
+  Optional note displayed below the progression, useful for arrangement or performance reminders.
+</ParamField>
+
+## Sections Array Format
+
+The `sections` array populates the section-jump buttons in the metadata panel. Each entry marks a named point in the song timeline.
+
+```json
+{
+  "sections": [
+    { "label": "Verse 1", "start": 15 },
+    { "label": "Chorus",  "start": 40 },
+    { "label": "Verse 2", "start": 71 },
+    { "label": "Chorus",  "start": 96 },
+    { "label": "Guitar Solo", "start": 127 },
+    { "label": "Bridge",  "start": 176 },
+    { "label": "Outro",   "start": 199 }
+  ]
+}
+```
+
+<ParamField body="label" type="string" required>
+  Display name for the section. Shown on the navigation button.
+</ParamField>
+
+<ParamField body="start" type="number" required>
+  Offset in seconds from the beginning of the song. Clicking the button seeks the playhead to this position.
+</ParamField>
+
+<ParamField body="end" type="number">
+  Optional end offset in seconds. Not currently used for playback gating, but stored in the bundle for future use.
+</ParamField>
+
+## Validation Rules
+
+The `scripts/validate-songs.ts` script enforces these rules when you run `npm run songs:validate`, `npm run songs:prepare`, or `npm run songs:release`:
+
+- `title`, `artist`, `key`, `bpm`, and `timeSignature` must all be present and non-empty.
+- `bpm` must be a JSON number, not a string.
+- `duration`, if present, must be a string (e.g. `"3:32"`).
+- `durationSeconds`, if present, must be a finite number.
+- `chords`, if present, must be either a string or a plain object. Each section value must be either a string or an object containing a non-empty `progression` string. Optional `label` and `notes` fields must also be strings when provided.
+- `sections`, if present: every entry must have a non-empty `label` string and a numeric `start`.
+- `lyrics.md` must exist in the song folder. An empty `lyrics.md` produces a validation **warning** (not an error) and ingestion continues.
+- Every required MP3 stem (`bass`, `drums`, `vocals`) must exist in the folder and must be non-empty.
+
+## Complete Example
+
+The following is the full `song.json` for the bundled *La bambola* demo, showing all supported fields:
+
+```json
+{
+  "title": "La bambola",
+  "artist": "Patty Pravo",
+  "key": "Gm",
+  "bpm": 118,
+  "timeSignature": "4/4",
+  "duration": "3:00",
+  "durationSeconds": 180,
+  "chords": {
+    "intro": {
+      "progression": "Gm | D | Gm | D"
+    },
+    "verse": {
+      "label": "Verse",
+      "progression": "Gm | D | Gm | Cm | D | Gm"
+    },
+    "chorus": {
+      "label": "Refrain",
+      "progression": "Bb | Eb | Cm | D | Gm"
+    },
+    "bridge": {
+      "progression": "Cm | Gm | D | Gm"
+    }
+  },
+  "notes": "Italian pop single from 1968, written by Franco Migliacci, Bruno Zambrini, and Ruggero Cini.",
+  "sections": [
+    { "label": "Strofa 1",    "start": 16 },
+    { "label": "Strofa 2",    "start": 51 },
+    { "label": "Ritornello",  "start": 86 },
+    { "label": "Strofa 3",    "start": 108 },
+    { "label": "Ritornello",  "start": 142 },
+    { "label": "Strofa 4",    "start": 162 }
+  ]
+}
+```
+
+## TypeScript Interface
+
+The `SongMetadata` interface in `src/lib/types.ts` precisely matches the validated shape:
+
+```ts
+export interface SongMetadata {
+  title: string;
+  artist: string;
+  key: string;
+  bpm: number;
+  timeSignature: string;
+  duration?: string;
+  durationSeconds?: number;
+  chords?: string | Record<string, string | ChordSection>;
+  notes?: string;
+  lyrics?: string;
+  sections?: SectionMarker[];
+}
+
+export interface ChordSection {
+  label?: string;
+  progression: string;
+  notes?: string;
+}
+
+export interface SectionMarker {
+  label: string;
+  start: number;
+  end?: number;
+}
+```

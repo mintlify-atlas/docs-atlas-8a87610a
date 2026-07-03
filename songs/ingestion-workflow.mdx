@@ -1,0 +1,212 @@
+---
+title: "Adding a Song: End-to-End Ingestion Workflow"
+sidebarTitle: "Ingestion Workflow"
+description: "Step-by-step guide to adding a new song to 4Stem Band Player, from creating the folder to running release validation before deployment."
+---
+
+Adding a song to 4Stem Band Player is a fully offline, script-driven process. There is no upload UI — you place files in the right folder, run a couple of npm scripts, and the song becomes part of the static catalog. This guide walks through every step from folder creation to the final release check you should run before committing or deploying.
+
+## The Ingestion Steps
+
+<Steps>
+
+### Create the song folder
+
+Create a new subfolder under `static/songs/` using a stable, URL-safe name with no spaces. The folder name becomes the song's unique ID in the manifest and in all stem URLs.
+
+```bash
+mkdir static/songs/MyNewSong
+```
+
+Good folder names:
+
+```text
+MyNewSong
+BlueMonday
+GloryBox
+```
+
+Avoid spaces. `My New Song` would require URL encoding everywhere it appears and is not supported as a folder name. If your song title contains spaces, use a CamelCase or concatenated slug for the folder and set the `title` field in `song.json` to the full display name.
+
+### Add `song.json`
+
+Create `static/songs/<Folder>/song.json` with at minimum the five required fields:
+
+```json
+{
+  "title": "My New Song",
+  "artist": "My Band",
+  "key": "A minor",
+  "bpm": 120,
+  "timeSignature": "4/4"
+}
+```
+
+Add optional fields as needed. A fully specified example with chords, sections, and duration metadata:
+
+```json
+{
+  "title": "My New Song",
+  "artist": "My Band",
+  "key": "A minor",
+  "bpm": 120,
+  "timeSignature": "4/4",
+  "duration": "4:32",
+  "durationSeconds": 272,
+  "chords": {
+    "intro": {
+      "progression": "Am | F | C | G"
+    },
+    "verse": {
+      "label": "Verse",
+      "progression": "Am | F | C | G",
+      "notes": "Repeat twice before chorus."
+    },
+    "chorus": {
+      "progression": "F | G | Am | Am"
+    }
+  },
+  "notes": "Rehearsal notes visible in the metadata panel.",
+  "sections": [
+    { "label": "Intro",  "start": 0 },
+    { "label": "Verse",  "start": 8 },
+    { "label": "Chorus", "start": 32 }
+  ]
+}
+```
+
+See the [song.json reference](/songs/song-json) for the full schema and validation rules.
+
+### Add `lyrics.md`
+
+Create `static/songs/<Folder>/lyrics.md`. The file must exist — validation will report an error if it is missing. An empty file is accepted with a warning, so you can create a placeholder now and fill it in later:
+
+```bash
+touch static/songs/MyNewSong/lyrics.md
+```
+
+A populated example:
+
+```markdown
+# My New Song
+
+[Verse]
+First lyric line here.
+Second lyric line here.
+
+[Chorus]
+Chorus lyric line.
+```
+
+### Add the MP3 stem files
+
+Place the required stem files in the song folder. The three required stems are `bass`, `drums`, and `vocals`. Optional stems (`guitar`, `strings`, `fx`, `other`) are loaded dynamically if their files are present.
+
+**Recommended naming convention** — use the folder name as the prefix:
+
+```text
+static/songs/MyNewSong/MyNewSong_bass.mp3
+static/songs/MyNewSong/MyNewSong_drums.mp3
+static/songs/MyNewSong/MyNewSong_vocals.mp3
+static/songs/MyNewSong/MyNewSong_guitar.mp3   ← optional
+```
+
+**Stem filename resolution** — the scripts resolve each stem file by checking, in order:
+
+1. `<Folder>_<stem>.mp3` (e.g. `MyNewSong_bass.mp3`)
+2. `<SongTitle>_<stem>.mp3` (e.g. `My New Song_bass.mp3`)
+3. Any file in the folder whose lowercase name ends with `_<stem>.mp3`
+
+All required files must be present and non-empty. Any optional file found in the folder must also be non-empty.
+
+### Run `npm run songs:prepare`
+
+Once the folder is populated, run the preparation script to validate, generate waveform peaks, and rebuild the manifest:
+
+```bash
+npm run songs:prepare
+```
+
+This command performs three steps in sequence:
+
+1. **Detect BPM** — reads the drums stem and writes the detected BPM back into `song.json` (skip with `--skip-bpm-detect` to preserve a manually curated value).
+2. **Validate** — checks every song folder for required files and valid metadata.
+3. **Generate peaks** — creates `.peaks.json` waveform data files for any stem that doesn't have one yet, or whose MP3 has changed since the peak file was last written.
+4. **Regenerate manifest** — rewrites `static/songs/manifest.json` to include the new song.
+
+If validation fails, the output will list each error. Fix the reported issue and run the command again.
+
+<Warning>
+  `songs:prepare` calls `songs:peaks` internally, which requires `ffmpeg` on your `PATH`. If `ffmpeg` is not installed, peak generation will fail with `Peak generation requires ffmpeg to be available on PATH`. Install ffmpeg and rerun, or pass `--skip-peaks` to skip peak generation for now.
+</Warning>
+
+<Tip>
+  If you only need to refresh peak files or regenerate the manifest without letting the script rewrite your carefully tuned BPM value, pass `--skip-bpm-detect`:
+
+  ```bash
+  npm run songs:prepare -- --skip-bpm-detect
+  ```
+</Tip>
+
+### Run `npm run songs:release` before committing
+
+Before committing, pushing, or deploying any song changes, run the full release workflow:
+
+```bash
+npm run songs:release
+```
+
+This extends `songs:prepare` with additional quality gates:
+
+1. Detect BPM → validate → generate peaks → regenerate manifest  
+2. `npm run check` — TypeScript and Svelte diagnostics  
+3. `npm test` — unit test suite  
+4. `npm run build` — full static production build
+
+If any step fails, fix the issue and run `songs:release` again. Only commit when the command exits cleanly.
+
+</Steps>
+
+## Removing an Optional Stem
+
+To remove an optional stem (for example, `guitar`) from an existing song:
+
+1. Delete the stem MP3: `static/songs/<Folder>/<Folder>_guitar.mp3`
+2. Delete its peak file: `static/songs/<Folder>/<Folder>_guitar.peaks.json`
+3. Regenerate the catalog:
+   ```bash
+   npm run songs:prepare
+   npm run build
+   ```
+
+The manifest will no longer include the stem, and the mixer will render without it on the next page load.
+
+## Troubleshooting
+
+<Accordion title='Error: "missing &lt;stem&gt; stem mp3"'>
+  The folder does not contain one of the required stem files (`bass`, `drums`, or `vocals`). Check that the file exists and that its name ends with `_bass.mp3`, `_drums.mp3`, or `_vocals.mp3`. The resolution order is `<Folder>_<stem>.mp3` → `<SongTitle>_<stem>.mp3` → any file ending in `_<stem>.mp3`. Rename the file to match one of those patterns and rerun `songs:prepare`.
+</Accordion>
+
+<Accordion title='Error: "song.json: missing &lt;field&gt;"'>
+  A required field (`title`, `artist`, `key`, `bpm`, or `timeSignature`) is absent or empty in `song.json`. Open the file and add the missing field, then rerun `songs:prepare`.
+</Accordion>
+
+<Accordion title='Error: "bpm must be a number"'>
+  The `bpm` field is present but written as a JSON string. Change it from `"120"` to the bare number `120`:
+
+  ```json
+  { "bpm": 120 }
+  ```
+</Accordion>
+
+<Accordion title='Error: "Peak generation requires ffmpeg to be available on PATH"'>
+  The `songs:peaks` script calls `ffmpeg` as an external process and it was not found. Install ffmpeg for your platform (e.g. `brew install ffmpeg` on macOS, or download from [ffmpeg.org](https://ffmpeg.org)), ensure it is on your `PATH`, and rerun `npm run songs:prepare`.
+</Accordion>
+
+<Accordion title="Waveforms don't update after replacing an MP3">
+  By default, `songs:peaks` skips a stem's peak file if it is newer than the MP3. If you replaced an MP3 but the peak file timestamp wasn't reset, pass `--force-peaks` to regenerate all peaks unconditionally:
+
+  ```bash
+  npm run songs:prepare -- --force-peaks
+  ```
+</Accordion>

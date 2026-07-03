@@ -1,0 +1,184 @@
+---
+title: "Song Management CLI Reference"
+sidebarTitle: "CLI Reference"
+description: "Reference for all song management npm scripts in 4Stem Band Player: songs:prepare, songs:release, songs:validate, songs:peaks, songs:manifest, and flags."
+---
+
+4Stem Band Player ships a suite of npm scripts for managing the song catalog. Two high-level workflow commands — `songs:prepare` and `songs:release` — cover the common day-to-day cases. Three lower-level commands let you run individual steps in isolation when debugging a specific part of the pipeline.
+
+<Note>
+  `songs:prepare` and `songs:release` are orchestration wrappers. Use them for normal work. Drop down to `songs:validate`, `songs:peaks`, or `songs:manifest` when you need to isolate and debug a specific step.
+</Note>
+
+---
+
+## `npm run songs:prepare`
+
+The standard local ingestion command. Run this every time you add, modify, or remove a song before starting the dev server or committing changes.
+
+**What it does:**
+
+1. Detects BPM from the drums stem and updates `song.json` (unless `--skip-bpm-detect` is passed).
+2. Validates all song folders for required files and metadata.
+3. Generates missing or outdated waveform peak files (requires `ffmpeg`).
+4. Regenerates `static/songs/manifest.json`.
+
+**Usage:**
+
+```bash
+npm run songs:prepare
+npm run songs:prepare -- [flags]
+```
+
+**Flags:**
+
+| Flag | Description |
+|---|---|
+| `--skip-peaks` | Skip waveform peak generation entirely. Useful when `ffmpeg` is unavailable or when only metadata changed. |
+| `--force-peaks` | Regenerate all peak files unconditionally, even if they appear current. Use after replacing MP3 files. |
+| `--skip-bpm-detect` | Skip automatic BPM detection from the drums stem. Preserves any manually curated BPM value in `song.json`. |
+| `--songs-root <path>` | Use a different songs root directory instead of the default `static/songs`. |
+
+---
+
+## `npm run songs:release`
+
+The full release workflow. Run this before every commit, push, or deployment that includes song changes. It extends `songs:prepare` with type checking, unit tests, and a production build.
+
+**What it does:**
+
+1. Detects BPM from the drums stem and updates `song.json` (unless `--skip-bpm-detect` is passed).
+2. Validates all song folders for required files and metadata.
+3. Generates missing or outdated waveform peak files (requires `ffmpeg`).
+4. Regenerates `static/songs/manifest.json`.
+5. Runs `npm run check` — TypeScript and Svelte diagnostics.
+6. Runs `npm test` — full unit test suite.
+7. Runs `npm run build` — static production build (unless `--skip-build` is passed).
+
+**Usage:**
+
+```bash
+npm run songs:release
+npm run songs:release -- [flags]
+```
+
+**Flags:**
+
+| Flag | Description |
+|---|---|
+| `--skip-build` | Run validation, type checks, and tests without executing the final `npm run build` step. Faster when you only need to verify correctness before pushing. |
+| `--force-peaks` | Force regeneration of all peak files. Inherited from `songs:prepare`. |
+| `--skip-peaks` | Skip peak generation. Inherited from `songs:prepare`. |
+| `--skip-bpm-detect` | Skip BPM detection. Inherited from `songs:prepare`. |
+| `--songs-root <path>` | Use a different songs root directory. Inherited from `songs:prepare`. |
+
+---
+
+## `npm run songs:validate`
+
+Validates all song folders against the required file and metadata rules. Reports errors and warnings to stdout.
+
+**What it does:**
+
+- Checks that `song.json` exists and contains all required fields (`title`, `artist`, `key`, `bpm`, `timeSignature`).
+- Verifies `bpm` is a number, and that optional fields (`duration`, `durationSeconds`, `chords`, `sections`) match their expected types and shapes.
+- Confirms `lyrics.md` exists (empty file is a warning; missing file is an error).
+- Confirms all required MP3 stems (`bass`, `drums`, `vocals`) exist and are non-empty.
+
+**Usage:**
+
+```bash
+npm run songs:validate
+```
+
+Run this command standalone when debugging metadata issues. `songs:prepare` and `songs:release` both run this step internally, but calling it directly avoids the overhead of peak generation and manifest writing.
+
+---
+
+## `npm run songs:peaks`
+
+Generates waveform peak JSON files from the MP3 stems using `ffmpeg`.
+
+**What it does:**
+
+- Iterates over every discovered stem file in every song folder.
+- For each stem, compares the modification time of the existing `.peaks.json` file (if any) against the MP3. If the peaks file is current, the stem is skipped.
+- Invokes `ffmpeg` to decode the MP3 to mono float32 samples at 8000 Hz.
+- Computes peak magnitudes by taking the maximum absolute sample value in each 512-sample window.
+- Writes the result as `<stem>.peaks.json` alongside the MP3.
+
+**Usage:**
+
+```bash
+npm run songs:peaks
+npm run songs:peaks -- --force-peaks
+```
+
+<Warning>
+  `songs:peaks` requires `ffmpeg` to be installed and available on your `PATH`. If `ffmpeg` is not found, the command will exit with `Peak generation requires ffmpeg to be available on PATH`. Install ffmpeg (e.g. `brew install ffmpeg` on macOS) before running this command.
+</Warning>
+
+**Peak file format:**
+
+```json
+{
+  "sampleRate": 8000,
+  "samplesPerPixel": 512,
+  "peaks": [0.0312, 0.1204, 0.8851, 0.9123]
+}
+```
+
+---
+
+## `npm run songs:manifest`
+
+Writes `static/songs/manifest.json` by scanning the current state of the song folders.
+
+**What it does:**
+
+- Lists all song folders under `static/songs/`.
+- Reads each `song.json` and resolves all stem and peak file paths.
+- Writes a new `manifest.json` with a fresh `generatedAt` timestamp.
+
+**Usage:**
+
+```bash
+npm run songs:manifest
+```
+
+Run this after any add, rename, or removal of song files to ensure the manifest reflects the current folder state. `songs:prepare` and `songs:release` call this step automatically, so you only need to run it standalone when you want to skip validation and peak generation.
+
+---
+
+## Combined Flag Examples
+
+Flags can be freely combined. The following examples show common patterns:
+
+```bash
+# Add a song, skip BPM detection (keep your curated BPM), and prepare:
+npm run songs:prepare -- --skip-bpm-detect
+
+# Force-regenerate all peaks without running the build (fast release check):
+npm run songs:release -- --force-peaks --skip-build
+
+# Prepare using a custom songs directory (useful for testing):
+npm run songs:prepare -- --songs-root path/to/test-songs
+
+# Release check with no peaks and no build — metadata and type checks only:
+npm run songs:release -- --skip-peaks --skip-build
+
+# Regenerate peaks only for a custom songs root:
+npm run songs:prepare -- --songs-root path/to/songs --force-peaks --skip-bpm-detect
+```
+
+---
+
+## Low-Level vs. Workflow Commands
+
+| Command | Level | When to use |
+|---|---|---|
+| `songs:prepare` | Workflow | Normal local song additions and updates |
+| `songs:release` | Workflow | Before every commit or deployment |
+| `songs:validate` | Low-level | Debugging metadata errors in isolation |
+| `songs:peaks` | Low-level | Debugging peak generation or running it separately |
+| `songs:manifest` | Low-level | Regenerating the manifest without validation or peaks |

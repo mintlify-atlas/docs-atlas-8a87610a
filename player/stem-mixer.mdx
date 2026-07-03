@@ -1,0 +1,119 @@
+---
+title: "Stem Mixer: Mute, Solo, Volume, and Waveforms"
+sidebarTitle: "Stem Mixer"
+description: "Control each stem independently with mute, solo, volume, and waveform seek in 4Stem Band Player. Covers stem rows, the Mixer popover, and solo behavior."
+---
+
+The stem mixer is the main per-track control surface in 4Stem Band Player. It lists every loaded stem as an expandable row and lets you mute, solo, adjust volume, and seek from individual waveforms — all without touching the transport bar. A compact floating Mixer popover provides a DJ-style view of the same controls for quick adjustments on smaller screens.
+
+## Stem Display Order
+
+Stems are always presented in a fixed preferred order regardless of how they are named on disk:
+
+```
+vocals → guitar → strings → drums → bass → fx → other
+```
+
+Any stems not in that preferred list appear after `other` in the order they are discovered. The three **required** stems (`bass`, `drums`, `vocals`) are always present. Optional stems (`guitar`, `strings`, `fx`, `other`) are auto-discovered if their MP3 files exist in the song folder — no configuration is needed.
+
+## Stem Row Layout
+
+Each stem occupies one collapsible `<article>` row. By default every row starts **collapsed** — only the stem name, status badge, and control buttons are visible.
+
+<CardGroup cols={2}>
+  <Card title="Stem Name" icon="tag" href="/player/stem-mixer">
+    The human-readable label (e.g. "Vocals", "Guitar") shown as a heading on the left side of every row.
+  </Card>
+  <Card title="Status Badge" icon="circle-info" href="/player/stem-mixer">
+    **Loading**, **Ready**, or **Error** — updates live as the stem fetches and decodes. Mute and Solo buttons are disabled until the stem is Ready.
+  </Card>
+  <Card title="Mute / Solo" icon="volume-xmark" href="/player/stem-mixer">
+    Toggle buttons in the stem controls bar. Both show a pressed state (`aria-pressed`) when active.
+  </Card>
+  <Card title="Expand Switch" icon="chevrons-down" href="/player/stem-mixer">
+    A right-aligned toggle switch expands or collapses the waveform and volume slider for that stem.
+  </Card>
+</CardGroup>
+
+When a row is **expanded**, it reveals:
+
+- **Waveform** — a WaveSurfer.js waveform that reflects the current playhead position
+- **Volume slider** — ranges from 0 to 1 (displayed as 0 % – 100 %)
+
+## Mute and Solo Behavior
+
+**Mute** sets the stem's effective gain to 0. The underlying buffer is still playing; the audio is simply silenced at the gain node so un-muting resumes instantly without a seek.
+
+**Solo** follows a whole-bus model: when _any_ stem is soloed, all non-soloed stems have their effective gain forced to 0. Multiple stems can be soloed simultaneously — only the soloed set is audible.
+
+<Note>
+  Gain changes (including mute, solo, and volume moves) are **ramped** over a short interval to prevent audible clicks at the transition boundary.
+</Note>
+
+## Volume Control
+
+The volume slider in each expanded row maps 0–1 internally but is displayed as 0 %–100 %. The output label updates live as you drag.
+
+```
+min: 0   (0 %)
+max: 1   (100 %)
+step: 0.01
+```
+
+Volume state is held in the audio engine and kept in sync between the full stem row and the Mixer popover — changing one automatically reflects in the other.
+
+## Waveforms
+
+Waveforms are rendered by [WaveSurfer.js](https://wavesurfer.xyz/). When a precomputed `.peaks.json` file exists for a stem, it is loaded instead of re-decoding the MP3, which makes the waveform appear faster and avoids redundant network and CPU work.
+
+Clicking anywhere on a waveform **seeks all stems** to that time position simultaneously — identical to using the transport seek slider. Seeking while playing is seamless; the engine recreates source nodes from the new offset without stopping playback.
+
+If a waveform fails to render, an overlay with a local error description is shown inside the waveform area. This does not prevent playback — it only affects the visual scrubber for that stem.
+
+## Stem Errors
+
+<Note>
+  When a stem fails to load, its row displays an **Error** status badge in red and an inline `role="alert"` paragraph with the specific error message. Transport controls remain disabled until all required stems have loaded without error.
+</Note>
+
+If pitch shift fails for a particular stem (for example, the SoundTouch AudioWorklet could not initialise for that track), a **"Pitch off"** badge appears alongside the status indicator. The stem continues to play at its original pitch rather than silencing entirely.
+
+## Mixer Popover
+
+The **Mixer** button in the [Transport Controls](/player/transport-controls) bar opens a compact floating panel overlaying the transport area. It offers the same per-stem controls in a minimal DJ-style layout:
+
+<Steps>
+  <Step title="LED meters">
+    Seven-segment LED bars driven by per-stem Web Audio `AnalyserNode` levels. Segments light up as the real-time signal crosses each threshold level.
+  </Step>
+  <Step title="Vertical faders">
+    Vertical `<input type="range">` sliders (0–1) replace the horizontal sliders from the full stem rows.
+  </Step>
+  <Step title="Percentage readout">
+    An `<output>` element below each fader shows the current volume as a whole-number percentage.
+  </Step>
+  <Step title="M / S buttons">
+    Compact Mute (M) and Solo (S) buttons below each fader. They show the same pressed state as the full rows.
+  </Step>
+</Steps>
+
+All Mixer popover changes are **immediately reflected** in the corresponding full stem row, and vice versa — they share the same underlying engine state.
+
+### Portrait Phone Layout
+
+On portrait phone screens the Mixer popover switches to tighter channel strips so every available stem fits inside the floating panel without horizontal scrolling. The full stem mixer remains visible below the transport area for waveform access.
+
+<Tabs>
+  <Tab title="Desktop">
+    Full-width channel strips with comfortable fader travel and LED meters at comfortable height.
+  </Tab>
+  <Tab title="Portrait Phone">
+    Condensed channel strips — narrower labels, smaller faders — all stems remain visible without scrolling.
+  </Tab>
+</Tabs>
+
+## Related Pages
+
+- [Transport Controls](/player/transport-controls) — play, pause, stop, and seek
+- [Transpose & Tempo](/player/transpose-tempo) — pitch-shifting non-drum stems
+- [Audio Engine Architecture](/architecture/audio-engine) — how gain, mute, and solo are applied in the Web Audio graph

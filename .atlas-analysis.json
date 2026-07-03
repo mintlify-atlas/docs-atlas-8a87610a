@@ -1,0 +1,84 @@
+{
+  "projectType": "saas",
+  "projectName": "4Stem Band Player",
+  "projectDescription": "A browser-based static web app for synchronized multi-stem music rehearsal, featuring per-stem mute/solo/volume controls, waveform visualization, global transpose, tempo, lyrics, chord charts, and offline PWA support.",
+  "theme": "willow",
+  "primaryColor": "#0d746c",
+  "lightColor": "#83bbb4",
+  "darkColor": "#d0e3e2",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "deployment"
+            ]
+          },
+          {
+            "group": "Using the Player",
+            "pages": [
+              "player/transport-controls",
+              "player/stem-mixer",
+              "player/transpose-tempo",
+              "player/lyrics-chords",
+              "player/pwa-offline"
+            ]
+          },
+          {
+            "group": "Adding Songs",
+            "pages": [
+              "songs/overview",
+              "songs/song-json",
+              "songs/ingestion-workflow",
+              "songs/cli-reference"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/stack",
+              "architecture/audio-engine",
+              "architecture/data-contracts"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Synchronized multi-stem playback (vocals, guitar, strings, drums, bass, fx, other)",
+    "Per-stem mute, solo, and volume controls with live LED meters",
+    "Global transpose via SoundTouch AudioWorklet (real-time on desktop, render mode on mobile)",
+    "Waveform visualization with WaveSurfer.js and precomputed peak files",
+    "Section markers for instant song navigation",
+    "Lyrics viewer and structured chord chart display",
+    "Low-memory Lite mode (mono/22 kHz decode) for mobile devices",
+    "Installable PWA with offline caching and Media Session / Wake Lock support",
+    "Space bar keyboard shortcut for play/pause",
+    "Static SvelteKit build — no server or auth required"
+  ],
+  "publicApiSurface": [
+    "AudioEngine.loadSong(entry: SongManifestEntry)",
+    "AudioEngine.play()",
+    "AudioEngine.pause()",
+    "AudioEngine.stop()",
+    "AudioEngine.seek(position: number)",
+    "AudioEngine.setVolume(stemName: string, volume: number)",
+    "AudioEngine.setMuted(stemName: string, muted: boolean)",
+    "AudioEngine.setSolo(stemName: string, solo: boolean)",
+    "AudioEngine.subscribe(callback)",
+    "npm run songs:prepare",
+    "npm run songs:release",
+    "npm run songs:validate",
+    "npm run songs:peaks",
+    "npm run songs:manifest",
+    "SongMetadata (song.json shape)",
+    "SongManifest / SongManifestEntry (manifest.json shape)",
+    "PeaksFile (*.peaks.json shape)"
+  ]
+}

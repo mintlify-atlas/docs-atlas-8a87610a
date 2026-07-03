@@ -1,0 +1,181 @@
+---
+title: "Installable PWA and Offline Playback"
+sidebarTitle: "PWA & Offline"
+description: "Install 4Stem Band Player to your home screen and play songs offline. Covers the service worker caching strategy, Media Session, Wake Lock, and Lite mode."
+---
+
+4Stem Band Player ships as a full Progressive Web App. You can install it to your phone or desktop home screen, launch it without a browser address bar, and play any song you have opened before — even with no network connection. This page covers the web app manifest, service worker caching, Media Session integration, Wake Lock, and the Lite mode memory optimisation.
+
+## Web App Manifest
+
+The app's manifest (`static/manifest.webmanifest`) configures the installable PWA identity:
+
+```json
+{
+  "name": "4Stem Band Player",
+  "short_name": "4Stem",
+  "description": "A four-stem rehearsal player for synchronized band practice.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f6f8",
+  "theme_color": "#0f766e",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
+```
+
+Key points:
+
+- `"display": "standalone"` — the app launches without browser chrome (no address bar, no tab strip)
+- `"orientation": "any"` — portrait and landscape are both supported
+- A **maskable** 512 × 512 icon ensures the home screen icon is correctly cropped inside Android adaptive icon shapes
+
+<Tip>
+  **Installing on iOS:** tap the Share button in Safari, then choose "Add to Home Screen". On Android Chrome, tap the three-dot menu and choose "Install app", or look for the install prompt that appears in the address bar after visiting the site.
+</Tip>
+
+## Service Worker and Offline Caching
+
+`src/service-worker.ts` handles caching through a versioned cache keyed by the SvelteKit build hash (`4stem-cache-<version>`).
+
+<Note>
+  The service worker is **only registered in production builds**. In development (`npm run dev`) no worker is registered, so offline behaviour and caching are not active during local development.
+</Note>
+
+### Caching Strategy
+
+<Steps>
+  <Step title="Install — precache the app shell">
+    On install, the worker caches every file in SvelteKit's `build` output (hashed JS/CSS bundles) plus everything in `static/` (icons, manifest, favicon). The worker calls `skipWaiting()` so a new version activates immediately without waiting for old tabs to close.
+
+    ```typescript
+    const SHELL_ASSETS = [...build, ...files];
+    sw.addEventListener('install', (event) => {
+      event.waitUntil(
+        caches.open(CACHE)
+          .then((cache) => cache.addAll(SHELL_ASSETS))
+          .then(() => sw.skipWaiting())
+      );
+    });
+    ```
+  </Step>
+  <Step title="Activate — prune stale caches">
+    On activation, the worker deletes every cache whose name does not match the current version string, ensuring old bundles are removed. It then calls `clients.claim()` to take control of open tabs immediately.
+  </Step>
+  <Step title="Fetch — app shell: cache-first">
+    Requests whose URL path matches a precached shell asset are served from the cache without a network round trip.
+  </Step>
+  <Step title="Fetch — /songs/*: cache-first with runtime fill">
+    Any request to a path under `/songs/` is served from cache if present. If not cached (first play), the worker fetches from the network and stores a clone in the cache so it is available offline next time.
+
+    ```typescript
+    if (url.pathname.startsWith('/songs/')) {
+      const cached = await cache.match(request);
+      if (cached) return cached;
+      const response = await fetch(request);
+      if (response.ok) cache.put(request, response.clone());
+      return response;
+    }
+    ```
+  </Step>
+  <Step title="Fetch — everything else: network-first with cache fallback">
+    Navigations and any other requests try the network first. If the network fails (offline), the worker falls back to a cached copy if one exists.
+  </Step>
+</Steps>
+
+This means **any song you play once is fully available offline** — MP3 stems, `song.json`, `lyrics.md`, and `.peaks.json` files are all cached under `/songs/`.
+
+## Media Session
+
+While a song is loaded, 4Stem Band Player publishes metadata and transport handlers to the [Media Session API](https://developer.mozilla.org/en-US/docs/Web/API/Media_Session_API). This allows the OS lock screen, Bluetooth headsets, car audio controls, and smartwatches to interact with playback.
+
+Published metadata includes:
+
+| Field | Value |
+|---|---|
+| `title` | Current song title (falls back to "4Stem Band Player") |
+| `artist` | Song artist from `song.json` |
+| `album` | `"4Stem Band Player"` |
+| `artwork` | 192 × 192 and 512 × 512 PNG icons from `/icons/` |
+
+Registered action handlers:
+
+- `play` / `pause` — toggle playback
+- `stop` — stop and reset position to 0
+- `seekto` — jump to an absolute position
+- `seekforward` / `seekbackward` — move by a fixed interval
+
+## Screen Wake Lock
+
+While playback is running, the app acquires a [Screen Wake Lock](https://developer.mozilla.org/en-US/docs/Web/API/Screen_Wake_Lock_API) to prevent the device from sleeping mid-song. The lock lifecycle follows playback:
+
+- **Acquired** when a song starts playing
+- **Re-acquired** when the browser tab returns to the foreground (wake lock is automatically released when the page becomes hidden)
+- **Released** when playback stops or pauses
+
+## Lite Mode
+
+Decoded PCM audio is held entirely in memory while a song is loaded. At 44.1 kHz stereo this is roughly **75 MB per stem**, so a six-stem song can occupy around **450 MB** — enough to trigger tab eviction on mobile browsers.
+
+Lite mode reduces this footprint by downmixing each stem to **mono** and resampling it to **22.05 kHz** as it loads, cutting the decoded size to approximately one quarter (~19 MB per stem, ~110 MB total for six stems).
+
+<Accordion title="What changes in Lite mode">
+  - Stems are decoded to **mono** (left + right channels averaged) instead of stereo
+  - Sample rate is resampled to **22.05 kHz** instead of 44.1 kHz using an `OfflineAudioContext`
+  - High-frequency detail (above ~11 kHz) is rolled off as a consequence of the lower sample rate
+  - Stereo width is lost — all stems play from the centre
+  - Drums, transpose, and tempo continue to behave exactly as in full-fidelity mode
+  - If `OfflineAudioContext` is unavailable, the player falls back to full-fidelity silently
+</Accordion>
+
+### Lite Toggle
+
+The `Lite` toggle lives in the app header next to the theme switch. It has three states:
+
+| Setting | Behaviour |
+|---|---|
+| `auto` (default) | Device signals determine whether Lite is active (see below) |
+| `on` | Always use Lite mode regardless of device |
+| `off` | Always use full-fidelity regardless of device |
+
+Toggling from `auto` to an explicit `on`/`off` preference reloads the current song so the new decode profile takes effect immediately.
+
+### Auto-Detection Signals
+
+When set to `auto`, Lite mode is enabled when any of the following are true:
+
+- The device has a **coarse pointer** and a phone-sized screen (touch-primary phones)
+- `navigator.connection.saveData === true` (Data Saver is on)
+- The connection is slow or metered
+- `navigator.deviceMemory` is low
+
+The same signals also auto-enable [render mode](/player/transpose-tempo#mobile-render-mode) for transpose processing.
+
+## Browser Preferences
+
+All user preferences are persisted to `localStorage` in the browser and restored on the next visit. Nothing is sent to a server.
+
+<CardGroup cols={2}>
+  <Card title="Theme" icon="sun" href="/player/pwa-offline">
+    Selected light or dark theme. Persists across sessions on the same device.
+  </Card>
+  <Card title="Last Song" icon="music" href="/player/pwa-offline">
+    The ID of the last selected song. If that song is no longer present in the manifest on next load, the player falls back to the first available song.
+  </Card>
+  <Card title="Lite Mode" icon="microchip" href="/player/pwa-offline">
+    Explicit `on`, `off`, or `auto` preference. Defaults to `auto` on first visit.
+  </Card>
+</CardGroup>
+
+## Related Pages
+
+- [Transport Controls](/player/transport-controls) — play, pause, seek, and keyboard shortcuts
+- [Transpose & Tempo](/player/transpose-tempo) — render mode and the same device signals as Lite auto-detection
+- [Songs Overview](/songs/overview) — song folder structure, MP3 stems, and peak files
+- [Data Contracts](/architecture/data-contracts) — `manifest.json` and `song.json` schemas
