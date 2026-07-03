@@ -1,7 +1,7 @@
 ---
-title: "Technology Stack and Application Architecture"
+title: "4Stem Band Player: Technology Stack and Architecture"
 sidebarTitle: "Stack"
-description: "Explore the SvelteKit, Svelte 5, TypeScript, and Web Audio API stack powering 4Stem Band Player, including runtime shape, state ownership, and UI composition."
+description: "Explore the SvelteKit, Svelte 5, TypeScript, and Web Audio API powering 4Stem Band Player: runtime shape, state ownership, and UI composition."
 ---
 
 4Stem Band Player is a browser-only static web application built with SvelteKit and Svelte 5. There is no server-side API, no database, no authentication layer, and no persistent client storage — every asset the player needs is a static file served from the `public/` build output. Audio decoding and playback happen entirely inside Web Audio API nodes that are created after the page mounts in the browser.

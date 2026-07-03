@@ -34,7 +34,7 @@ Repeated with feeling
 
 ## Song Info Panel
 
-The Song Info panel is always visible below the stem mixer. It shows the song title, artist, and a metadata grid with the following fields drawn from `song.json`:
+The Song Info panel lives in the sidebar alongside the stem mixer. It shows the song title, artist, and a metadata grid with the following fields drawn from `song.json`:
 
 | Field | Source key | Example |
 |---|---|---|
@@ -45,6 +45,8 @@ The Song Info panel is always visible below the stem mixer. It shows the song ti
 | Seconds | `durationSeconds` | `246` |
 
 Duration and Seconds fall back to the value measured from loaded stem buffers when the `song.json` fields are absent.
+
+Below the metadata grid, the panel renders the **chord chart** (if `chords` is present in `song.json`) and **rehearsal notes** (if `notes` is present).
 
 ## Chord Chart
 
@@ -96,7 +98,7 @@ The `formatChords` helper in `SongInfoPanel.svelte` converts either format into 
 
 ## Section Markers
 
-Section markers appear in two places: the **Sections** floating panel (for seeking) and the Song Info panel (for context). Each marker in the `sections` array requires a `label` and a numeric `start` time in seconds from the beginning of the song. An optional `end` time is supported but not displayed in the current UI.
+Section markers appear in the **Sections** floating panel (opened from the transport bar) as seek buttons. Each marker in the `sections` array requires a `label` and a numeric `start` time in seconds from the beginning of the song. An optional `end` time is supported in the data contract.
 
 ### Sample `song.json` with Sections and Chords
 

@@ -35,6 +35,7 @@ Key points:
 - `"display": "standalone"` — the app launches without browser chrome (no address bar, no tab strip)
 - `"orientation": "any"` — portrait and landscape are both supported
 - A **maskable** 512 × 512 icon ensures the home screen icon is correctly cropped inside Android adaptive icon shapes
+- `app.html` includes a `<link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png">` tag for iOS home screen installation
 
 <Tip>
   **Installing on iOS:** tap the Share button in Safari, then choose "Add to Home Screen". On Android Chrome, tap the three-dot menu and choose "Install app", or look for the install prompt that appears in the address bar after visiting the site.
@@ -152,8 +153,8 @@ When set to `auto`, Lite mode is enabled when any of the following are true:
 
 - The device has a **coarse pointer** and a phone-sized screen (touch-primary phones)
 - `navigator.connection.saveData === true` (Data Saver is on)
-- The connection is slow or metered
-- `navigator.deviceMemory` is low
+- The connection is slow or metered (`slow-2g`, `2g`, or `3g`)
+- `navigator.deviceMemory` is 4 GB or less
 
 The same signals also auto-enable [render mode](/player/transpose-tempo#mobile-render-mode) for transpose processing.
 

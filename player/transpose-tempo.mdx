@@ -15,7 +15,7 @@ The transpose controls sit in the transport bar directly below the seek slider a
     Decrements the global transpose by one semitone. Disabled while the song is loading.
   </Card>
   <Card title="Amount Display" icon="music" href="/player/transpose-tempo">
-    Shows the current shift, e.g. `+2` or `−3`. Formatted by `formatPitchSemitones` — displays `0` when no shift is active.
+    Shows the current shift, e.g. `+2 st` or `−3 st`. Formatted by `formatPitchSemitones` — displays `0 st` when no shift is active.
   </Card>
   <Card title="+ Button" icon="plus" href="/player/transpose-tempo">
     Increments the global transpose by one semitone. Disabled while the song is loading.
@@ -26,7 +26,7 @@ A **Reset transpose** button appears alongside the `−`/`+` pair. Pressing it r
 
 ## Global-Only Transpose
 
-Transpose is intentionally **global**: every non-drum stem shifts by the same number of semitones at once. Per-stem transpose is not exposed in the UI.
+Transpose is intentionally **global**: every non-drum stem shifts by the same number of semitones at once. Per-stem transpose is not exposed in the UI (nor is the BPM/tempo control — the engine retains the tempo capability internally but it is no longer exposed in the interface).
 
 **Drum stems are excluded.** Drums stay at their original pitch regardless of the global setting. In render mode, drums are still routed through the same offline pass (at pitch 0) to maintain phase lock — see [Drum Compensation](#drum-compensation-in-render-mode) below.
 
@@ -55,12 +55,12 @@ Render mode is auto-enabled on the same signals used by [Lite mode](/player/pwa-
 
 ### Render Progress Indicator
 
-While renders are running, the transport shows one of two progress messages:
+While renders are running, the transport shows a progress message. When multiple stems are rendering concurrently, the message includes a stem counter:
 
 | Message | When shown |
 |---|---|
-| `Applying key & tempo…` | Initial render or when both transpose and tempo change together |
-| `Applying transpose… N/M` | Per-stem progress during a transpose-only render (N stems complete, M total) |
+| `Applying transpose…` | A single-stem render, or when total stems rendered is one |
+| `Applying transpose… N/M` | Per-stem progress during a multi-stem render (N stems complete of M total) |
 
 Playback resumes automatically from the same position once all stems have been rendered.
 

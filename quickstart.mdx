@@ -116,7 +116,7 @@ description: "Clone the repo, install dependencies, and launch 4Stem Band Player
     npm run build
     ```
 
-    SvelteKit compiles the static site and writes the output to `build/`. The build step also copies `static/songs/` content into `public/songs/` so the deployable artifact is self-contained under `public/`.
+    SvelteKit uses `@sveltejs/adapter-static` (configured in `svelte.config.js`) to prerender every route to static HTML and emit all client assets. The build writes the deployable output to `public/`, and also copies `static/songs/` content into `public/songs/` so the artifact is fully self-contained.
   </Step>
 
   <Step title="Preview the production build">
@@ -124,7 +124,7 @@ description: "Clone the repo, install dependencies, and launch 4Stem Band Player
     npm run preview
     ```
 
-    Opens a local static file server at [http://localhost:4173](http://localhost:4173) serving the `public/` output directory, with the same `0.0.0.0` binding as the dev server.
+    Starts a local static file server at [http://localhost:4173](http://localhost:4173) serving the `public/` output directory, with the same `0.0.0.0` binding as the dev server.
   </Step>
 
 </Steps>
@@ -134,7 +134,7 @@ description: "Clone the repo, install dependencies, and launch 4Stem Band Player
 | Script | Description |
 |---|---|
 | `npm run dev` | Start the Vite dev server (binds to `0.0.0.0`, port 5173) |
-| `npm run build` | Compile and write the static site to `build/` / `public/` |
+| `npm run build` | Compile and write the static site to `public/` |
 | `npm run preview` | Serve the production build locally (binds to `0.0.0.0`, port 4173) |
 | `npm run check` | Run `svelte-kit sync` and `svelte-check` for type and template errors |
 | `npm test` | Run the full Vitest test suite (17 files, 100 tests) |

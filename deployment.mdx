@@ -4,7 +4,7 @@ sidebarTitle: "Deployment"
 description: "Build the static site and deploy to Vercel or any static host. Covers build output structure, vercel.json config, and what the server must serve."
 ---
 
-4Stem Band Player compiles to a fully static site — no Node server, no API routes, and no database. The production build writes everything the browser needs into a single output directory, which you can serve from Vercel, Netlify, Cloudflare Pages, an S3-backed CDN, or any plain static file host.
+4Stem Band Player compiles to a fully static site — no Node server, no API routes, and no database. The production build writes everything the browser needs into `public/`, which you can serve from Vercel, Netlify, Cloudflare Pages, an S3-backed CDN, or any plain static file host.
 
 ## Building for Production
 
@@ -14,12 +14,7 @@ Run the production build with:
 npm run build
 ```
 
-SvelteKit uses `@sveltejs/adapter-static` (configured in `svelte.config.js`) to prerender every route to static HTML and emit all client assets. The build writes output to two locations:
-
-- **`build/`** — the internal SvelteKit build directory
-- **`public/`** — the deployable artifact; this is what your host should serve
-
-The build step also automatically copies the contents of `static/songs/` into `public/songs/`, so the deployable output is fully self-contained.
+SvelteKit uses `@sveltejs/adapter-static` (configured in `svelte.config.js`) to prerender every route to static HTML and emit all client assets into `public/`. The build step also automatically copies the contents of `static/songs/` into `public/songs/`, so the deployable output is fully self-contained.
 
 ### `svelte.config.js` adapter settings
 
@@ -55,7 +50,7 @@ No server-side route, API endpoint, or database connection is required at runtim
 
 ## Deploying to Vercel
 
-The repository includes a `vercel.json` that configures Vercel to use the static build adapter and point to the correct output directory. No additional Vercel dashboard settings are needed beyond connecting the repository.
+The repository includes a `vercel.json` that points Vercel to the correct output directory. No additional Vercel dashboard settings are needed beyond connecting the repository.
 
 ### `vercel.json`
 
@@ -66,7 +61,7 @@ The repository includes a `vercel.json` that configures Vercel to use the static
 }
 ```
 
-Vercel reads `buildCommand` to run `npm run build` and then serves the resulting `public/` directory as a static site via `@vercel/static-build`. Push to your connected branch and Vercel handles the rest.
+Vercel reads `buildCommand` to run `npm run build` and then serves the resulting `public/` directory as a static site. Push to your connected branch and Vercel handles the rest.
 
 <Note>
   Your static host or CDN must serve all file types in `public/` without blocking — including `.mp3` audio files, `.json` metadata and peak files, and `.md` lyrics files. Some CDN configurations restrict non-HTML MIME types by default; ensure `audio/mpeg`, `application/json`, and `text/markdown` (or `text/plain`) are permitted.

@@ -111,7 +111,12 @@ Generates waveform peak JSON files from the MP3 stems using `ffmpeg`.
 
 ```bash
 npm run songs:peaks
-npm run songs:peaks -- --force-peaks
+```
+
+To force-regenerate all peak files, use `songs:prepare` with the `--force-peaks` flag instead:
+
+```bash
+npm run songs:prepare -- --force-peaks
 ```
 
 <Warning>

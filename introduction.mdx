@@ -41,16 +41,16 @@ Each folder contains the MP3 stems, precomputed waveform peak JSON files, `song.
 
 ## Technical Foundation
 
-| Layer | Technology |
-|---|---|
-| App framework | SvelteKit 2 with `@sveltejs/adapter-static` |
-| UI runtime | Svelte 5 (runes syntax — `$state`, `$derived`, `$effect`, `$props`) |
-| Language | TypeScript 6 |
-| Build tool | Vite 8 |
-| Audio engine | Web Audio API (`AudioContext`, `AudioBufferSourceNode`, `GainNode`) |
-| Waveform rendering | WaveSurfer.js 7 with precomputed peak files |
-| Pitch shifting | SoundTouch `@soundtouchjs/audio-worklet` |
-| Tests | Vitest 4 — 17 test files, 100 tests |
+| Layer | Technology | Version |
+|---|---|---|
+| App framework | SvelteKit | 2.59.1 |
+| UI runtime | Svelte 5 (runes syntax — `$state`, `$derived`, `$effect`, `$props`) | 5.55.7 |
+| Language | TypeScript | 6.0.3 |
+| Build tool | Vite | 8.0.11 |
+| Audio engine | Web Audio API (`AudioContext`, `AudioBufferSourceNode`, `GainNode`) | — |
+| Waveform rendering | wavesurfer.js | 7.12.6 |
+| Pitch shifting | SoundTouch `@soundtouchjs/audio-worklet` | — |
+| Tests | Vitest — 17 test files, 100 tests | 4.1.5 |
 
 The SvelteKit route is fully prerendered to static HTML. All audio work starts after the browser mounts the component, so there is no server-side audio dependency of any kind.
 

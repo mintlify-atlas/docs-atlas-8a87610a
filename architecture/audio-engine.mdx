@@ -1,7 +1,7 @@
 ---
 title: "AudioEngine: Web Audio Playback and Stem Synchronization"
 sidebarTitle: "Audio Engine"
-description: "Deep dive into AudioEngine.ts — the central Web Audio module for stem loading, synchronized playback, gain control, pitch shifting, and snapshot-based state."
+description: "Deep dive into AudioEngine.ts: the central Web Audio module for stem loading, synchronized playback, gain control, pitch shifting, and snapshot state."
 ---
 
 `AudioEngine` is the single source of truth for all audio state in 4Stem Band Player. Located at `src/lib/audio/AudioEngine.ts`, it wraps the Web Audio API into a testable, snapshot-driven class that `AppShell.svelte` subscribes to. Components never touch `AudioContext` directly — they call engine methods and re-render from the immutable `AudioEngineSnapshot` objects the engine emits.
